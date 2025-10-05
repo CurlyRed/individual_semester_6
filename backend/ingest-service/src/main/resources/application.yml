@@ -1,0 +1,37 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: ingest-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: 1
+      compression-type: snappy
+      properties:
+        "[spring.json.add.type.headers]": false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    health:
+      show-details: always
+
+wcd:
+  api-key: ${WCD_API_KEY:dev-secret-key}
+  topic:
+    game-actions: game.actions
+  rate-limit:
+    capacity: 100
+    refill-tokens: 100
+    refill-duration-seconds: 1

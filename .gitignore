@@ -1,0 +1,51 @@
+# Markdown files (except README.md)
+*.md
+!README.md
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Java/Gradle
+backend/.gradle/
+backend/build/
+backend/**/build/
+backend/gradle-wrapper.jar
+backend/.gradletasknamecache
+
+# Node/Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Build artifacts
+*.jar
+!gradle-wrapper.jar
+
+# Test reports
+**/test-results/
+**/build/reports/
+
+# Windows reserved filenames
+nul
+NUL

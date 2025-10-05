@@ -1,0 +1,231 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  test-backend:
+    name: Test Backend Services
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        working-directory: ./backend
+        run: chmod +x gradlew
+
+      - name: Run tests
+        working-directory: ./backend
+        run: ./gradlew test --no-daemon
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/**/build/reports/tests/
+
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+  load-test:
+    name: Run k6 Load Tests
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redpanda:
+        image: docker.redpanda.com/redpandadata/redpanda:v23.3.5
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build backend services
+        working-directory: ./backend
+        run: |
+          chmod +x gradlew
+          ./gradlew :ingest-service:bootJar --no-daemon
+          ./gradlew :projector-service:bootJar --no-daemon
+          ./gradlew :query-service:bootJar --no-daemon
+
+      - name: Start ingest service
+        working-directory: ./backend
+        run: |
+          java -jar ingest-service/build/libs/*.jar \
+            --server.port=8081 \
+            --spring.kafka.bootstrap-servers=localhost:9092 \
+            --wcd.api.key=dev-secret-key &
+          sleep 20
+
+      - name: Start projector service
+        working-directory: ./backend
+        run: |
+          java -jar projector-service/build/libs/*.jar \
+            --server.port=8082 \
+            --spring.kafka.bootstrap-servers=localhost:9092 \
+            --spring.data.redis.host=localhost \
+            --spring.data.redis.port=6379 &
+          sleep 15
+
+      - name: Start query service
+        working-directory: ./backend
+        run: |
+          java -jar query-service/build/libs/*.jar \
+            --server.port=8083 \
+            --spring.data.redis.host=localhost \
+            --spring.data.redis.port=6379 &
+          sleep 10
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run k6 baseline test
+        working-directory: ./k6
+        run: k6 run baseline.js --env BASE_URL=http://localhost:8081 --env API_KEY=dev-secret-key
+
+      - name: Upload k6 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-test-results
+          path: k6/*.json
+
+  build-and-push-images:
+    name: Build and Push Docker Images
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - name: ingest-service
+            context: ./backend
+            dockerfile: ./backend/ingest-service/Dockerfile
+          - name: projector-service
+            context: ./backend
+            dockerfile: ./backend/projector-service/Dockerfile
+          - name: query-service
+            context: ./backend
+            dockerfile: ./backend/query-service/Dockerfile
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "Docker images built and pushed successfully!"
+          echo "Images available at: ghcr.io/${{ github.repository }}"
+          echo "To deploy, pull the images and run docker-compose up -d on your server"

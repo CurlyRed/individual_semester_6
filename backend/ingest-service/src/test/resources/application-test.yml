@@ -1,0 +1,15 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+wcd:
+  api-key: test-api-key
+  topic:
+    game-actions: test.game.actions
+  rate-limit:
+    capacity: 100
+    refill-tokens: 100
+    refill-duration-seconds: 1
