@@ -229,7 +229,7 @@
         "reduceOptions": {
           "values": false,
           "calcs": [
-            "lastNotNull"
+            "mean"
           ],
           "fields": ""
         },
@@ -238,13 +238,14 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"ingest-service\"}[5m]))",
-          "legendFormat": "p95 Latency",
-          "refId": "A"
+          "expr": "rate(http_server_requests_seconds_sum{job=\"ingest-service\",uri=\"/api/events/heartbeat\"}[5m]) / rate(http_server_requests_seconds_count{job=\"ingest-service\",uri=\"/api/events/heartbeat\"}[5m])",
+          "legendFormat": "Avg Latency",
+          "refId": "A",
+          "instant": false
         }
       ],
-      "title": "Ingest Service p95 Latency",
-      "type": "gauge"
+      "title": "Ingest Service Avg Latency",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -278,26 +279,26 @@
       },
       "id": 4,
       "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {
-          "expr": "sum(jvm_memory_used_bytes{job=~\".*-service\"})",
-          "legendFormat": "JVM Memory Used",
+          "expr": "sum(jvm_memory_used_bytes{job=~\".*-service\",area=\"heap\"}) by (job)",
+          "legendFormat": "{{job}}",
           "refId": "A"
         }
       ],
-      "title": "Total JVM Memory Usage",
-      "type": "gauge"
+      "title": "JVM Heap Memory Usage",
+      "type": "timeseries"
     },
     {
       "datasource": {

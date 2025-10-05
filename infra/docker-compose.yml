@@ -55,6 +55,9 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=redpanda:29092
       - WCD_API_KEY=dev-secret-key
+      - WCD_RATE_LIMIT_CAPACITY=20000
+      - WCD_RATE_LIMIT_REFILL_TOKENS=20000
+      - WCD_RATE_LIMIT_REFILL_DURATION_SECONDS=1
     depends_on:
       redpanda:
         condition: service_healthy

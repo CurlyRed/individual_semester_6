@@ -49,3 +49,8 @@ Thumbs.db
 # Windows reserved filenames
 nul
 NUL
+
+# k6 test results
+k6/*.json
+k6/baseline-results.json
+k6/spike-results.json
