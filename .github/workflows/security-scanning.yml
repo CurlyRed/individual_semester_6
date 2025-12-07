@@ -246,17 +246,16 @@ jobs:
       - name: Install Snyk CLI
         run: npm install -g snyk
 
-      - name: Authenticate Snyk
-        if: ${{ secrets.SNYK_TOKEN != '' }}
-        run: snyk auth ${{ secrets.SNYK_TOKEN }}
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
       - name: Snyk Backend Scan
         working-directory: ./backend
         run: |
           chmod +x gradlew
-          snyk test --all-projects --severity-threshold=high || true
+          if [ -n "$SNYK_TOKEN" ]; then
+            snyk auth $SNYK_TOKEN
+            snyk test --all-projects --severity-threshold=high || true
+          else
+            echo "⚠️ SNYK_TOKEN not set, skipping Snyk scan"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
@@ -265,13 +264,22 @@ jobs:
         working-directory: ./frontend
         run: |
           npm ci
-          snyk test --severity-threshold=high || true
+          if [ -n "$SNYK_TOKEN" ]; then
+            snyk test --severity-threshold=high || true
+          else
+            echo "⚠️ SNYK_TOKEN not set, skipping Snyk scan"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
 
       - name: Snyk Code Analysis
-        run: snyk code test --severity-threshold=high || true
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            snyk code test --severity-threshold=high || true
+          else
+            echo "⚠️ SNYK_TOKEN not set, skipping Snyk code analysis"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
