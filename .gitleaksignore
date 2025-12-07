@@ -1,0 +1,12 @@
+# GitLeaks ignore file
+# These are development/example values, not real secrets
+
+# Dev API key example in PowerShell script
+k8s/FIX-AND-DEPLOY-REAL.ps1:curl-auth-header:321
+
+# Example basic auth for monitoring (admin/admin - not production)
+k8s/base/ingress/ingress.yaml:kubernetes-secret-yaml:225
+k8s/base/ingress/ingress.yaml:generic-api-key:233
+
+# Config files with example/dev keys
+k8s/base/secrets/app-secrets.yaml
