@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wcd-redpanda
+  namespace: wcd-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redpanda
+  template:
+    metadata:
+      labels:
+        app: redpanda
+    spec:
+      containers:
+      - name: redpanda
+        image: docker.redpanda.com/redpandadata/redpanda:v23.3.5
+        ports:
+        - containerPort: 9092
+        env:
+        - name: REDPANDA_MODE
+          value: "dev-container"
+        - name: REDPANDA_ENVIRONMENT
+          value: "development"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wcd-redpanda
+  namespace: wcd-platform
+spec:
+  selector:
+    app: redpanda
+  ports:
+  - port: 9092
+    targetPort: 9092

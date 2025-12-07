@@ -1,0 +1,243 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wcd-ingest-service
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+    app.kubernetes.io/name: ingest-service
+    app.kubernetes.io/part-of: wcd-system
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 3  # Starting with 3 replicas for HA
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero downtime deployment
+  selector:
+    matchLabels:
+      app: ingest-service
+  template:
+    metadata:
+      labels:
+        app: ingest-service
+        app.kubernetes.io/name: ingest-service
+        app.kubernetes.io/expose: "true"  # For NetworkPolicy
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: wcd-ingest-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ingest-service
+        image: ghcr.io/curlyred/individual_semester_6/ingest-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8081
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: SERVER_PORT
+          value: "8081"
+        - name: SPRING_APPLICATION_NAME
+          value: "ingest-service"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: JAVA_OPTS
+          valueFrom:
+            configMapKeyRef:
+              name: wcd-app-config
+              key: JAVA_OPTS
+        envFrom:
+        - configMapRef:
+            name: wcd-app-config
+        - secretRef:
+            name: wcd-app-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 30  # 30 * 10 = 300s max startup time
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: app-logs
+          mountPath: /var/log/app
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: app-logs
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ingest-service
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: ingest-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wcd-ingest-service
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wcd-ingest-service
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+    app.kubernetes.io/name: ingest-service
+    app.kubernetes.io/part-of: wcd-system
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+spec:
+  type: ClusterIP
+  selector:
+    app: ingest-service
+  ports:
+  - name: http
+    port: 8081
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: wcd-ingest-service-hpa
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: wcd-ingest-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: wcd-ingest-service-pdb
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ingest-service

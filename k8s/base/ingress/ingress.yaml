@@ -1,0 +1,233 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wcd-platform-ingress
+  namespace: wcd-platform
+  labels:
+    app.kubernetes.io/name: wcd-ingress
+    app.kubernetes.io/part-of: wcd-system
+  annotations:
+    # Nginx Ingress Controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "100"
+
+    # CORS configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-KEY"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+
+    # Cert-manager annotation for automatic TLS certificate
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # AWS ALB annotations (if using AWS)
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/healthcheck-path: /health
+
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.wcd-platform.com
+    - wcd-platform.com
+    secretName: wcd-tls-secret
+  rules:
+  # Main domain - redirect to frontend
+  - host: wcd-platform.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-frontend
+            port:
+              number: 3000
+
+  # API subdomain
+  - host: api.wcd-platform.com
+    http:
+      paths:
+      # Ingest Service
+      - path: /api/events
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-ingest-service
+            port:
+              number: 8081
+
+      # Query Service
+      - path: /api/query
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-query-service
+            port:
+              number: 8083
+      - path: /api/leaderboard
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-query-service
+            port:
+              number: 8083
+      - path: /api/presence
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-query-service
+            port:
+              number: 8083
+
+      # User Service
+      - path: /api/users
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-user-service
+            port:
+              number: 8084
+      - path: /api/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-user-service
+            port:
+              number: 8084
+
+      # Chat Service (WebSocket)
+      - path: /api/chat
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-chat-service
+            port:
+              number: 8085
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-chat-service
+            port:
+              number: 8085
+
+      # Notification Service
+      - path: /api/notifications
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-notification-service
+            port:
+              number: 8086
+
+      # Analytics Service
+      - path: /api/analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-analytics-service
+            port:
+              number: 8087
+
+      # Health check endpoint
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: wcd-query-service
+            port:
+              number: 8083
+---
+# Separate ingress for monitoring tools (optional)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wcd-monitoring-ingress
+  namespace: wcd-platform
+  labels:
+    app.kubernetes.io/name: wcd-monitoring-ingress
+    app.kubernetes.io/part-of: wcd-system
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - WCD Monitoring'
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - monitoring.wcd-platform.com
+    - grafana.wcd-platform.com
+    - jaeger.wcd-platform.com
+    secretName: wcd-monitoring-tls-secret
+  rules:
+  # Grafana
+  - host: grafana.wcd-platform.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-grafana
+            port:
+              number: 3000
+
+  # Jaeger UI
+  - host: jaeger.wcd-platform.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-jaeger-query
+            port:
+              number: 16686
+
+  # Prometheus (be careful exposing this)
+  - host: monitoring.wcd-platform.com
+    http:
+      paths:
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: wcd-prometheus
+            port:
+              number: 9090
+---
+# Basic auth secret for monitoring ingress
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-auth
+  namespace: wcd-platform
+type: Opaque
+data:
+  # htpasswd -c auth admin
+  # Default: admin/admin (change in production!)
+  auth: YWRtaW46JGFwcjEkSDY1dnBkTU8kMVAxNDM5RkhGNlpwZDAuYzhVcUJpLwo=

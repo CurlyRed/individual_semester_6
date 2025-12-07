@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wcd-app-config
+  namespace: wcd-platform
+  labels:
+    app.kubernetes.io/name: wcd-config
+    app.kubernetes.io/part-of: wcd-system
+data:
+  # Kafka/Redpanda Configuration
+  KAFKA_BOOTSTRAP_SERVERS: "wcd-redpanda:9092"
+  KAFKA_GROUP_ID: "wcd-platform"
+  KAFKA_AUTO_OFFSET_RESET: "latest"
+  KAFKA_ENABLE_AUTO_COMMIT: "false"
+
+  # Redis Configuration
+  REDIS_HOST: "wcd-redis-master"
+  REDIS_PORT: "6379"
+  REDIS_DATABASE: "0"
+  REDIS_TIMEOUT: "2000"
+  REDIS_CONNECTION_POOL_SIZE: "10"
+
+  # Application Settings
+  APP_ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+
+  # Service Discovery
+  INGEST_SERVICE_URL: "http://wcd-ingest-service:8081"
+  QUERY_SERVICE_URL: "http://wcd-query-service:8083"
+  USER_SERVICE_URL: "http://wcd-user-service:8084"
+  CHAT_SERVICE_URL: "http://wcd-chat-service:8085"
+  NOTIFICATION_SERVICE_URL: "http://wcd-notification-service:8086"
+  ANALYTICS_SERVICE_URL: "http://wcd-analytics-service:8087"
+
+  # Rate Limiting
+  RATE_LIMIT_CAPACITY: "10000"
+  RATE_LIMIT_REFILL_TOKENS: "10000"
+  RATE_LIMIT_REFILL_DURATION_SECONDS: "1"
+
+  # Monitoring
+  METRICS_ENABLED: "true"
+  METRICS_PORT: "9090"
+  HEALTH_CHECK_ENABLED: "true"
+
+  # OpenTelemetry Configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://wcd-jaeger-collector:4317"
+  OTEL_SERVICE_NAME: "wcd-platform"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "prometheus"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_PROPAGATORS: "tracecontext,baggage"
+
+  # Java Options (for Spring Boot services)
+  JAVA_OPTS: "-Xmx512m -Xms256m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+  # Spring Profiles
+  SPRING_PROFILES_ACTIVE: "kubernetes,production"
+
+  # Resilience4j Configuration
+  RESILIENCE4J_CIRCUITBREAKER_FAILURE_RATE_THRESHOLD: "50"
+  RESILIENCE4J_CIRCUITBREAKER_WAIT_DURATION_IN_OPEN_STATE: "60s"
+  RESILIENCE4J_CIRCUITBREAKER_SLIDING_WINDOW_SIZE: "100"
+  RESILIENCE4J_RETRY_MAX_ATTEMPTS: "3"
+  RESILIENCE4J_RETRY_WAIT_DURATION: "1s"
+
+  # CORS Configuration
+  CORS_ALLOWED_ORIGINS: "*"
+  CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+  CORS_ALLOWED_HEADERS: "*"
+  CORS_MAX_AGE: "3600"

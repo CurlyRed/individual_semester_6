@@ -38,6 +38,10 @@ Thumbs.db
 # Environment
 .env
 
+# GCP credentials (NEVER commit!)
+gcp-key.json
+*-credentials.json
+
 # Build artifacts
 *.jar
 !gradle-wrapper.jar
