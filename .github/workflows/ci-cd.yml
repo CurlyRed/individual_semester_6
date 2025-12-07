@@ -18,7 +18,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
+  IMAGE_PREFIX: curlyred/individual_semester_6
   GKE_CLUSTER: wcd-platform-cluster
   GKE_ZONE: us-central1-a
   GKE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
@@ -298,7 +298,7 @@ jobs:
         run: |
           export IMAGE_TAG="${{ github.sha }}"
           export REGISTRY="${{ env.REGISTRY }}"
-          export REPO="${{ github.repository }}"
+          export REPO="curlyred/individual_semester_6"
 
           # Update deployment manifests with new image tags
           sed -i "s|wcd/ingest-service:latest|${REGISTRY}/${REPO}/ingest-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
@@ -405,7 +405,7 @@ jobs:
         run: |
           export IMAGE_TAG="${{ github.sha }}"
           export REGISTRY="${{ env.REGISTRY }}"
-          export REPO="${{ github.repository }}"
+          export REPO="curlyred/individual_semester_6"
 
           sed -i "s|wcd/ingest-service:latest|${REGISTRY}/${REPO}/ingest-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
           sed -i "s|wcd/projector-service:latest|${REGISTRY}/${REPO}/projector-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
