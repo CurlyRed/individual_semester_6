@@ -1,12 +1,12 @@
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost'
-const INGEST_PORT = import.meta.env.VITE_INGEST_PORT || '8081'
-const QUERY_PORT = import.meta.env.VITE_QUERY_PORT || '8083'
+// In GKE: use relative URLs (nginx proxies to services)
+// Locally: use localhost with ports
+const isProduction = import.meta.env.PROD
 const API_KEY = import.meta.env.VITE_API_KEY || 'dev-secret-key'
 
 const ingestClient = axios.create({
-  baseURL: `${API_BASE}:${INGEST_PORT}`,
+  baseURL: isProduction ? '/ingest' : 'http://localhost:8081',
   headers: {
     'X-API-KEY': API_KEY,
     'Content-Type': 'application/json'
@@ -14,7 +14,7 @@ const ingestClient = axios.create({
 })
 
 const queryClient = axios.create({
-  baseURL: `${API_BASE}:${QUERY_PORT}`,
+  baseURL: isProduction ? '/query' : 'http://localhost:8083',
   headers: {
     'Content-Type': 'application/json'
   }
