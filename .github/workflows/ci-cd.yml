@@ -320,6 +320,7 @@ jobs:
           sed -i "s|type: NodePort|type: LoadBalancer|g" k8s/frontend-deploy.yaml
 
           kubectl apply -f k8s/config.yaml -n wcd-staging
+          kubectl apply -f k8s/redis-simple.yaml -n wcd-staging
           kubectl apply -f k8s/redpanda-deploy.yaml -n wcd-staging
           kubectl apply -f k8s/services-deploy.yaml -n wcd-staging
           kubectl apply -f k8s/frontend-deploy.yaml -n wcd-staging
@@ -426,6 +427,7 @@ jobs:
           sed -i "s|type: NodePort|type: LoadBalancer|g" k8s/frontend-deploy.yaml
 
           kubectl apply -f k8s/config.yaml -n wcd-production
+          kubectl apply -f k8s/redis-simple.yaml -n wcd-production
           kubectl apply -f k8s/redpanda-deploy.yaml -n wcd-production
           kubectl apply -f k8s/services-deploy.yaml -n wcd-production
           kubectl apply -f k8s/frontend-deploy.yaml -n wcd-production

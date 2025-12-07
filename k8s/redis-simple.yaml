@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wcd-redis
+  labels:
+    app: wcd-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wcd-redis
+  template:
+    metadata:
+      labels:
+        app: wcd-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wcd-redis
+spec:
+  type: ClusterIP
+  selector:
+    app: wcd-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
