@@ -1,124 +1,182 @@
 # World Cup Drinking (WCD) Platform
 
-A high-performance, event-driven microservices platform for tracking real-time drinking game events during World Cup matches. Built with modern cloud-native technologies, OAuth2/OIDC security, and GDPR compliance.
+A high-performance, event-driven microservices platform for tracking real-time drinking game events during World Cup matches. **Production-deployed to Google Kubernetes Engine (GKE)** with comprehensive security scanning.
 
-## 🏗️ Architecture
+[![CI/CD](https://github.com/CurlyRed/individual_semester_6/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/CurlyRed/individual_semester_6/actions/workflows/ci-cd.yml)
+[![Security Scanning](https://github.com/CurlyRed/individual_semester_6/actions/workflows/security-scanning.yml/badge.svg)](https://github.com/CurlyRed/individual_semester_6/actions/workflows/security-scanning.yml)
 
-**Microservices + Event-Driven + Multi-Model Database**
+## Architecture
 
-### Backend Services (7 microservices)
-- **ingest-service**: HTTP API for event ingestion (drink recording, heartbeats)
-- **projector-service**: Kafka consumer that processes events and updates database
-- **query-service**: Read-only API for leaderboards and statistics
-- **user-service**: User profile management, authentication integration
-- **chat-service**: Real-time chat (WebSocket)
-- **notification-service**: Email notifications (SendGrid)
-- **analytics-service**: Data analytics and reporting
-- **common**: Shared DTOs, utilities, and database migrations
+**Event-Driven Microservices + CQRS Pattern**
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Frontend  │────▶│   Ingest    │────▶│   Kafka     │────▶│  Projector  │
+│   (React)   │     │   Service   │     │ (Redpanda)  │     │   Service   │
+└─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
+       │                                                           │
+       │            ┌─────────────┐     ┌─────────────┐            │
+       └───────────▶│    Query    │◀────│    Redis    │◀───────────┘
+                    │   Service   │     │  (Cache)    │
+                    └─────────────┘     └─────────────┘
+```
+
+### Backend Services (3 microservices)
+- **ingest-service** (8081): HTTP API for event ingestion (drinks, heartbeats) with rate limiting
+- **projector-service** (8082): Kafka consumer that processes events and updates Redis
+- **query-service** (8083): Read-only API for leaderboards and online presence
 
 ### Technology Stack
 
-**Backend**:
-- Java 21 (LTS), Kotlin
-- Spring Boot 3.2.x
-- Gradle (Kotlin DSL)
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Java 21, Spring Boot 3.2.x, Gradle (Kotlin DSL) |
+| **Frontend** | React 18, TypeScript, Vite, TailwindCSS |
+| **Messaging** | Redpanda (Kafka-compatible) |
+| **Database** | Redis (caching + read projections) |
+| **Observability** | Prometheus, Grafana |
+| **Container** | Docker, nginx (frontend proxy) |
+| **Orchestration** | Kubernetes (GKE) |
+| **CI/CD** | GitHub Actions |
+| **Security** | 6 scanning tools (see below) |
 
-**Database & Storage**:
-- **SurrealDB** (multi-model: document + graph + time-series)
-- **Redis** (caching, fallback storage)
-- **Cloudflare R2** (media storage: avatars, photos)
+## Cloud Deployment (GKE)
 
-**Messaging & Events**:
-- **Redpanda** (Kafka-compatible event streaming)
-- Event sourcing pattern
+### Live Environment
 
-**Authentication & Security**:
-- **Ory Kratos** (identity management)
-- **Ory Hydra** (OAuth2/OIDC provider)
-- OAuth2 + PKCE flow
-- Argon2 password hashing
-- JWT tokens (RS256)
+The platform is deployed to **Google Kubernetes Engine** with staging and production namespaces.
 
-**Resilience**:
-- **Resilience4j** (circuit breakers, rate limiters)
-- Graceful degradation (Redis fallback)
+| Environment | Frontend URL | Status |
+|-------------|--------------|--------|
+| **Staging** | `http://<EXTERNAL-IP>:5173` | Auto-deploy on push to `main` |
+| **Production** | `http://<EXTERNAL-IP>:5173` | Manual approval required |
 
-**Observability**:
-- **Jaeger** (distributed tracing)
-- **OpenTelemetry** (trace propagation)
-- **Prometheus** (metrics)
-- **Grafana** (dashboards)
-
-**Frontend**:
-- React 18
-- TypeScript
-- Vite
-- TailwindCSS
-
-**Testing**:
-- JUnit 5, MockK (unit tests)
-- Testcontainers (integration tests)
-- k6 (load testing)
-- Playwright (E2E tests)
-
-**Deployment**:
-- Docker + Docker Compose
-- Fly.io (production)
-- Kubernetes + Helm (optional)
-
-**Security Scanning**:
-- Trivy (container vulnerabilities)
-- OWASP ZAP (DAST)
-- OWASP Dependency-Check (dependencies)
-
-## 📂 Project Structure
-
-```
-/backend/              # Java microservices (Gradle multi-module)
-  /common/             # Shared DTOs
-    /src/main/java/    # Source code
-    /src/test/java/    # Unit tests
-  /ingest-service/     # Event ingestion API
-  /projector-service/  # Event processor
-  /query-service/      # Read API
-/frontend/             # React dashboard
-/infra/                # Docker Compose, Prometheus, Grafana configs
-/k6/                   # Load testing scripts
+To get the external IP:
+```bash
+kubectl get svc wcd-frontend -n wcd-staging
 ```
 
-📖 **Detailed Guides:**
-- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - IntelliJ IDEA & VS Code setup instructions
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Complete directory tree and file explanations
+### GCP Console Links
 
-## 🚀 Quick Start
+| Resource | URL |
+|----------|-----|
+| **GKE Clusters** | https://console.cloud.google.com/kubernetes/list?project=wcd-platform-sem6 |
+| **Workloads** | https://console.cloud.google.com/kubernetes/workload?project=wcd-platform-sem6 |
+| **Services** | https://console.cloud.google.com/kubernetes/discovery?project=wcd-platform-sem6 |
+| **Logs** | https://console.cloud.google.com/logs?project=wcd-platform-sem6 |
+| **Billing** | https://console.cloud.google.com/billing?project=wcd-platform-sem6 |
+
+### Start/Stop Cluster (Cost Management)
+
+The GKE cluster costs approximately **$35-45/month** when running. To save costs:
+
+#### Stop the Cluster (Pause Billing)
+```bash
+# Scale down all node pools to 0
+gcloud container clusters resize wcd-platform-cluster --zone us-central1-a --num-nodes 0 --quiet
+```
+
+#### Start the Cluster (Resume)
+```bash
+# Scale back up to 2 nodes
+gcloud container clusters resize wcd-platform-cluster --zone us-central1-a --num-nodes 2 --quiet
+
+# Wait for nodes to be ready
+kubectl get nodes -w
+
+# Restart deployments
+kubectl rollout restart deployment -n wcd-staging
+```
+
+#### Delete Cluster Entirely (Stop All Billing)
+```bash
+gcloud container clusters delete wcd-platform-cluster --zone us-central1-a --quiet
+```
+
+#### Recreate Cluster
+```bash
+gcloud container clusters create wcd-platform-cluster \
+  --zone us-central1-a \
+  --num-nodes 2 \
+  --machine-type e2-small \
+  --enable-autoscaling --min-nodes 1 --max-nodes 3
+```
+
+### Monitor Deployment Status
+
+```bash
+# Check all pods
+kubectl get pods -n wcd-staging
+
+# Check services and external IPs
+kubectl get svc -n wcd-staging
+
+# View logs for a service
+kubectl logs -f deployment/wcd-ingest-service -n wcd-staging
+
+# Check deployment rollout status
+kubectl rollout status deployment/wcd-frontend -n wcd-staging
+```
+
+## CI/CD Pipeline
+
+### Automated Workflow
+
+On every push to `main`:
+
+1. **Test** - Backend unit tests, frontend build validation
+2. **Build** - Docker images for all 4 services
+3. **Security Scan** - 6 security tools analyze code and containers
+4. **Deploy Staging** - Automatic deployment to GKE staging namespace
+5. **Deploy Production** - Manual approval required
+
+### Security Scanning Tools
+
+| Tool | Type | Purpose |
+|------|------|---------|
+| **SonarCloud** | SAST | Code quality, bugs, code smells |
+| **CodeQL** | SAST | Security vulnerabilities in code |
+| **OWASP Dependency-Check** | SCA | Vulnerable dependencies (CVEs) |
+| **Trivy** | Container | Container image vulnerabilities |
+| **Checkov** | IaC | Kubernetes manifest security |
+| **GitLeaks** | Secrets | Hardcoded secrets detection |
+
+Results are uploaded to **GitHub Security tab** in SARIF format.
+
+### Docker Images
+
+Images are published to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/curlyred/individual_semester_6/ingest-service:latest
+docker pull ghcr.io/curlyred/individual_semester_6/projector-service:latest
+docker pull ghcr.io/curlyred/individual_semester_6/query-service:latest
+docker pull ghcr.io/curlyred/individual_semester_6/frontend:latest
+```
+
+## Local Development
 
 ### Prerequisites
 
-- **Docker Desktop** (for Windows 11)
-- **Java 21** (optional, for local development)
-- **Node.js 20+** (optional, for local frontend development)
+- **Docker Desktop** (Windows/Mac)
+- **Java 21** (optional, for IDE development)
+- **Node.js 20+** (optional, for frontend development)
 - **k6** (optional, for load testing)
 
-### Running with Docker (Recommended)
+### Quick Start with Docker
 
 ```powershell
 cd infra
 docker-compose up -d
 ```
 
-This will build and start all services:
+This starts all services:
 - **Infrastructure**: Redis (6379), Redpanda/Kafka (9092)
-- **Backend Services**: Ingest (8081), Projector (8082), Query (8083)
+- **Backend**: Ingest (8081), Projector (8082), Query (8083)
 - **Frontend**: React Dashboard (5173)
 - **Observability**: Prometheus (9090), Grafana (3000)
 
-First-time build takes ~2-3 minutes. Subsequent starts are instant.
-
-### Running Locally (Development)
-
-See **[quickstart_checklist.md](quickstart_checklist.md)** for detailed step-by-step local setup.
-
-### 3. Access Services
+### Access Services (Local)
 
 | Service | URL |
 |---------|-----|
@@ -128,11 +186,30 @@ See **[quickstart_checklist.md](quickstart_checklist.md)** for detailed step-by-
 | Ingest API | http://localhost:8081 |
 | Query API | http://localhost:8083 |
 
-## 📡 API Endpoints
+### Running Without Docker
+
+```powershell
+# Start infrastructure only
+cd infra
+docker-compose up redpanda redis prometheus grafana -d
+
+# Start backend services (separate terminals)
+cd backend
+./gradlew :ingest-service:bootRun
+./gradlew :projector-service:bootRun
+./gradlew :query-service:bootRun
+
+# Start frontend
+cd frontend
+npm install
+npm run dev
+```
+
+## API Reference
 
 ### Ingest Service (Port 8081)
 
-**POST** `/api/events/heartbeat`
+**POST** `/api/events/heartbeat` - Record user presence
 ```json
 {
   "userId": "user-123",
@@ -142,7 +219,7 @@ See **[quickstart_checklist.md](quickstart_checklist.md)** for detailed step-by-
 }
 ```
 
-**POST** `/api/events/drink`
+**POST** `/api/events/drink` - Record drink event
 ```json
 {
   "userId": "user-123",
@@ -152,206 +229,130 @@ See **[quickstart_checklist.md](quickstart_checklist.md)** for detailed step-by-
 }
 ```
 
-**Headers Required:**
-- `X-API-KEY: dev-secret-key`
+**Headers Required:** `X-API-KEY: dev-secret-key`
 
 ### Query Service (Port 8083)
 
-**GET** `/api/health`
-- Returns service health status
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Service health status |
+| `GET /api/presence/onlineCount` | Count of online users (active in last 30s) |
+| `GET /api/leaderboard?matchId=match-1&limit=10` | Top players for a match |
 
-**GET** `/api/presence/onlineCount`
-- Returns count of online users (active in last 30s)
+## Load Testing
 
-**GET** `/api/leaderboard?matchId=match-1&limit=10`
-- Returns top players for a match
-
-## 🧪 Load Testing
-
-Run baseline test (1500 RPS):
 ```powershell
 cd k6
-k6 run baseline.js
-```
 
-Run spike test (2000 RPS):
-```powershell
+# Baseline test (1500 RPS)
+k6 run baseline.js
+
+# Spike test (2000 RPS)
 k6 run spike.js
 ```
 
-## 📊 Observability
+## Observability
 
 ### Grafana Dashboard
 
-1. Open http://localhost:3000
+1. Open http://localhost:3000 (or GKE external IP)
 2. Login: `admin` / `admin`
-3. Navigate to "WCD Platform Overview" dashboard
+3. Navigate to "WCD Platform Overview"
 
 **Key Metrics:**
 - Event ingestion rate (heartbeats, drinks)
 - Projector processing rate
 - p95 latency
-- JVM memory usage
 - Rejected events rate
 
 ### Prometheus Metrics
 
-Direct access: http://localhost:9090
-
-Custom metrics:
+Custom metrics exposed:
 - `wcd_events_heartbeat_total`
 - `wcd_events_drink_total`
 - `wcd_events_rejected_total`
 - `wcd_projector_heartbeat_total`
 - `wcd_projector_drink_total`
 
-## 🔄 CI/CD Pipeline
+## Project Structure
 
-This project includes a GitHub Actions workflow that automatically:
-
-1. **Runs Tests** on every push/PR
-   - Backend: Gradle unit tests (Java 21)
-   - Frontend: TypeScript build validation
-   - Load Testing: k6 baseline tests (PRs only)
-
-2. **Builds Docker Images** on push to `main`
-   - All 4 services (ingest, projector, query, frontend)
-   - Tagged with branch name, commit SHA, and `latest`
-   - Pushed to GitHub Container Registry (ghcr.io)
-
-3. **Ready for Deployment**
-   - Images available at: `ghcr.io/curlyred/individual_semester_6/*`
-   - Pull and deploy with `docker-compose`
-
-**Workflow File:** `.github/workflows/ci-cd.yml`
-
-### Docker Images
-
-Pull the latest images:
-```bash
-docker pull ghcr.io/curlyred/individual_semester_6/ingest-service:latest
-docker pull ghcr.io/curlyred/individual_semester_6/projector-service:latest
-docker pull ghcr.io/curlyred/individual_semester_6/query-service:latest
-docker pull ghcr.io/curlyred/individual_semester_6/frontend:latest
+```
+/backend/                    # Java microservices (Gradle multi-module)
+  /common/                   # Shared DTOs and utilities
+  /ingest-service/           # Event ingestion API
+  /projector-service/        # Kafka consumer, Redis writer
+  /query-service/            # Read-only API
+/frontend/                   # React dashboard + nginx proxy
+/infra/                      # Docker Compose, Prometheus, Grafana
+/k6/                         # Load testing scripts
+/k8s/                        # Kubernetes manifests
+  /base/                     # Base manifests (Kustomize)
+  /overlays/staging/         # Staging environment config
+  /overlays/production/      # Production environment config
+/.github/workflows/          # CI/CD pipelines
+  ci-cd.yml                  # Build, test, deploy pipeline
+  security-scanning.yml      # Security scanning pipeline
 ```
 
-## 🔧 Development
+## Configuration
 
-### Running Services Locally (without Docker)
+Environment variables (see `infra/.env`):
 
-**Start Redpanda & Redis:**
+| Variable | Description |
+|----------|-------------|
+| `WCD_API_KEY` | API key for ingest authentication |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka connection string |
+| `REDIS_HOST` | Redis hostname |
+| `REDIS_PORT` | Redis port |
+
+## Troubleshooting
+
+### Docker Issues
+
 ```powershell
-cd infra
-docker-compose up redpanda redis
-```
-
-**Start Backend Services:**
-```powershell
-cd backend
-./gradlew :ingest-service:bootRun
-./gradlew :projector-service:bootRun
-./gradlew :query-service:bootRun
-```
-
-**Start Frontend:**
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-## 🎯 Acceptance Criteria
-
-✅ Services boot and connect via Docker Compose
-✅ Ingest publishes → Projector consumes → Redis updates → Query reads
-✅ Frontend dashboard shows live metrics and updates
-✅ Grafana dashboards render Micrometer data
-✅ k6 load tests stable under 1500 RPS with low latency
-
-## 🧩 Engineering Principles
-
-- **KISS**: Keep It Simple, Stupid
-- **YAGNI**: You Aren't Gonna Need It
-- **SOLID**: Selective application (SRP, DIP)
-- **DRY**: Only extract clear duplication
-- **12-Factor**: Env-based config, stateless services
-- **Security by Design**: API key validation, rate limiting
-
-## 📝 Configuration
-
-All services use environment variables (see `.env` file):
-- `WCD_API_KEY`: API key for authentication
-- `KAFKA_BOOTSTRAP_SERVERS`: Kafka connection string
-- `REDIS_HOST`, `REDIS_PORT`: Redis connection
-
-## 🛠️ Troubleshooting
-
-**Services won't start:**
-```powershell
+# Full reset
 docker-compose down -v
 docker-compose up --build
-```
 
-**Redis connection issues:**
-```powershell
+# Check Redis
 docker exec -it wcd-redis redis-cli PING
-```
 
-**Kafka issues:**
-```powershell
+# Check Kafka
 docker exec -it wcd-redpanda rpk cluster health
 ```
 
-**Check service logs:**
-```powershell
-docker-compose logs -f ingest-service
-docker-compose logs -f projector-service
-docker-compose logs -f query-service
+### GKE Issues
+
+```bash
+# Pod not starting
+kubectl describe pod <pod-name> -n wcd-staging
+
+# View pod logs
+kubectl logs <pod-name> -n wcd-staging
+
+# Restart deployment
+kubectl rollout restart deployment/<deployment-name> -n wcd-staging
+
+# Check events
+kubectl get events -n wcd-staging --sort-by='.lastTimestamp'
 ```
 
-## 📚 Documentation
+### Auth Plugin Issues
 
-### Getting Started
-- **[Local Development Setup](docs/sprint3/Local_Development_Setup.md)** - Complete local environment setup
-- **[API Documentation](docs/sprint3/API_Documentation.md)** - REST API reference for all services
-- **[Testing Guide](docs/sprint3/Testing_Guide.md)** - Unit, integration, E2E, and performance tests
+If `kubectl` commands fail with auth errors:
+```bash
+gcloud components install gke-gcloud-auth-plugin
+gcloud container clusters get-credentials wcd-platform-cluster --zone us-central1-a
+```
 
-### Architecture & Design
-- **[ADR-001: Event Bus Selection](docs/sprint1/ADR-001-Event-Bus-Selection.md)** - Why Redpanda
-- **[ADR-006: Authentication](docs/sprint2/ADR-006-Authentication-Provider-Selection.md)** - Ory Kratos + Hydra (OAuth2/OIDC)
-- **[ADR-007: Database Selection](docs/sprint2/ADR-007-Database-Selection-SurrealDB.md)** - SurrealDB multi-model
-- **[ADR-008: Circuit Breakers](docs/sprint3/ADR-008-Circuit-Breakers.md)** - Resilience4j patterns
-- **[ADR-009: Observability](docs/sprint3/ADR-009-Observability.md)** - Jaeger + OpenTelemetry
+## Engineering Principles
 
-### Database
-- **[SurrealDB Schema Documentation](docs/sprint3/SurrealDB_Schema_Documentation.md)** - Complete schema with examples
-- **[Migration Guide](docs/sprint2/SURREALDB_MIGRATIONS.md)** - Database migration system
-
-### Security & Compliance
-- **[Security Practices](docs/sprint3/Security_Practices.md)** - OWASP Top 10, auth, rate limiting
-- **[GDPR Compliance Guide](docs/sprint3/GDPR_Compliance_Guide.md)** - Data rights, deletion, export
-
-### Performance & Monitoring
-- **[Performance Benchmarks](docs/sprint3/Performance_Benchmarks.md)** - k6 test results, latency metrics
-- **[Monitoring Setup](docs/sprint3/Monitoring_Setup.md)** - Prometheus, Grafana, Jaeger (coming soon)
-
-### Deployment
-- **[Fly.io Deployment](docs/sprint2/FLY_IO_DEPLOYMENT.md)** - Production deployment guide
-- **[Kubernetes Deployment](docs/sprint3/KUBERNETES_DEPLOYMENT.md)** - K8s + Helm setup
-
-### External References
-- [Spring Boot Documentation](https://spring.io/projects/spring-boot)
-- [SurrealDB Documentation](https://surrealdb.com/docs)
-- [Redpanda Documentation](https://docs.redpanda.com/)
-- [Ory Documentation](https://www.ory.sh/docs/)
-- [k6 Documentation](https://k6.io/docs/)
-
-## 📄 License
-
-MIT License - See LICENSE file for details
+- **KISS** - Keep It Simple, Stupid
+- **YAGNI** - You Aren't Gonna Need It
+- **12-Factor** - Environment-based config, stateless services
+- **Security by Design** - API key validation, rate limiting, 6 security scanners
+- **Event Sourcing** - Kafka as source of truth, Redis as read projection
 
 ---
 
-**Sprint 1, Version 1.5 Extended**
-🧠 Built following KISS, YAGNI, and SOLID principles
-🚀 Production-ready walking skeleton
+**Sprint 3** | Production-deployed to GKE | 6-layer security scanning

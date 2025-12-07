@@ -42,6 +42,9 @@ Thumbs.db
 gcp-key.json
 *-credentials.json
 
+# Generated docs folder
+docs/
+
 # Build artifacts
 *.jar
 !gradle-wrapper.jar
@@ -58,3 +61,5 @@ NUL
 k6/*.json
 k6/baseline-results.json
 k6/spike-results.json
+
+
