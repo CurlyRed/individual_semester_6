@@ -1,24 +1,75 @@
 # World Cup Drinking (WCD) Platform
 
-A high-performance, event-driven microservices platform for tracking real-time drinking game events during World Cup matches.
+A high-performance, event-driven microservices platform for tracking real-time drinking game events during World Cup matches. Built with modern cloud-native technologies, OAuth2/OIDC security, and GDPR compliance.
 
 ## 🏗️ Architecture
 
-**Microservices + Asynchronous Messaging**
+**Microservices + Event-Driven + Multi-Model Database**
 
-- **ingest-service**: HTTP API for event ingestion (heartbeats, drink events)
-- **projector-service**: Kafka consumer that updates Redis projections
-- **query-service**: Read-only API for leaderboards and presence data
-- **common**: Shared DTOs and utilities
+### Backend Services (7 microservices)
+- **ingest-service**: HTTP API for event ingestion (drink recording, heartbeats)
+- **projector-service**: Kafka consumer that processes events and updates database
+- **query-service**: Read-only API for leaderboards and statistics
+- **user-service**: User profile management, authentication integration
+- **chat-service**: Real-time chat (WebSocket)
+- **notification-service**: Email notifications (SendGrid)
+- **analytics-service**: Data analytics and reporting
+- **common**: Shared DTOs, utilities, and database migrations
 
-**Technologies**
+### Technology Stack
 
-- Backend: Java 21, Spring Boot 3.x, Gradle (Kotlin DSL)
-- Messaging: Redpanda (Kafka-compatible)
-- Data Store: Redis (ZSET, HLL, TTL)
-- Frontend: React + Vite + TypeScript + TailwindCSS
-- Observability: Micrometer → Prometheus → Grafana
-- Load Testing: k6
+**Backend**:
+- Java 21 (LTS), Kotlin
+- Spring Boot 3.2.x
+- Gradle (Kotlin DSL)
+
+**Database & Storage**:
+- **SurrealDB** (multi-model: document + graph + time-series)
+- **Redis** (caching, fallback storage)
+- **Cloudflare R2** (media storage: avatars, photos)
+
+**Messaging & Events**:
+- **Redpanda** (Kafka-compatible event streaming)
+- Event sourcing pattern
+
+**Authentication & Security**:
+- **Ory Kratos** (identity management)
+- **Ory Hydra** (OAuth2/OIDC provider)
+- OAuth2 + PKCE flow
+- Argon2 password hashing
+- JWT tokens (RS256)
+
+**Resilience**:
+- **Resilience4j** (circuit breakers, rate limiters)
+- Graceful degradation (Redis fallback)
+
+**Observability**:
+- **Jaeger** (distributed tracing)
+- **OpenTelemetry** (trace propagation)
+- **Prometheus** (metrics)
+- **Grafana** (dashboards)
+
+**Frontend**:
+- React 18
+- TypeScript
+- Vite
+- TailwindCSS
+
+**Testing**:
+- JUnit 5, MockK (unit tests)
+- Testcontainers (integration tests)
+- k6 (load testing)
+- Playwright (E2E tests)
+
+**Deployment**:
+- Docker + Docker Compose
+- Fly.io (production)
+- Kubernetes + Helm (optional)
+
+**Security Scanning**:
+- Trivy (container vulnerabilities)
+- OWASP ZAP (DAST)
+- OWASP Dependency-Check (dependencies)
 
 ## 📂 Project Structure
 
@@ -258,13 +309,42 @@ docker-compose logs -f projector-service
 docker-compose logs -f query-service
 ```
 
-## 📚 Further Reading
+## 📚 Documentation
 
+### Getting Started
+- **[Local Development Setup](docs/sprint3/Local_Development_Setup.md)** - Complete local environment setup
+- **[API Documentation](docs/sprint3/API_Documentation.md)** - REST API reference for all services
+- **[Testing Guide](docs/sprint3/Testing_Guide.md)** - Unit, integration, E2E, and performance tests
+
+### Architecture & Design
+- **[ADR-001: Event Bus Selection](docs/sprint1/ADR-001-Event-Bus-Selection.md)** - Why Redpanda
+- **[ADR-006: Authentication](docs/sprint2/ADR-006-Authentication-Provider-Selection.md)** - Ory Kratos + Hydra (OAuth2/OIDC)
+- **[ADR-007: Database Selection](docs/sprint2/ADR-007-Database-Selection-SurrealDB.md)** - SurrealDB multi-model
+- **[ADR-008: Circuit Breakers](docs/sprint3/ADR-008-Circuit-Breakers.md)** - Resilience4j patterns
+- **[ADR-009: Observability](docs/sprint3/ADR-009-Observability.md)** - Jaeger + OpenTelemetry
+
+### Database
+- **[SurrealDB Schema Documentation](docs/sprint3/SurrealDB_Schema_Documentation.md)** - Complete schema with examples
+- **[Migration Guide](docs/sprint2/SURREALDB_MIGRATIONS.md)** - Database migration system
+
+### Security & Compliance
+- **[Security Practices](docs/sprint3/Security_Practices.md)** - OWASP Top 10, auth, rate limiting
+- **[GDPR Compliance Guide](docs/sprint3/GDPR_Compliance_Guide.md)** - Data rights, deletion, export
+
+### Performance & Monitoring
+- **[Performance Benchmarks](docs/sprint3/Performance_Benchmarks.md)** - k6 test results, latency metrics
+- **[Monitoring Setup](docs/sprint3/Monitoring_Setup.md)** - Prometheus, Grafana, Jaeger (coming soon)
+
+### Deployment
+- **[Fly.io Deployment](docs/sprint2/FLY_IO_DEPLOYMENT.md)** - Production deployment guide
+- **[Kubernetes Deployment](docs/sprint3/KUBERNETES_DEPLOYMENT.md)** - K8s + Helm setup
+
+### External References
 - [Spring Boot Documentation](https://spring.io/projects/spring-boot)
+- [SurrealDB Documentation](https://surrealdb.com/docs)
 - [Redpanda Documentation](https://docs.redpanda.com/)
-- [Redis Documentation](https://redis.io/documentation)
+- [Ory Documentation](https://www.ory.sh/docs/)
 - [k6 Documentation](https://k6.io/docs/)
-- [Grafana Documentation](https://grafana.com/docs/)
 
 ## 📄 License
 

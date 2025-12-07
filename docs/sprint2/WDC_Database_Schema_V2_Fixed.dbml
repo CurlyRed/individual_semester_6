@@ -1,0 +1,355 @@
+// ============================================================================
+// WCD PLATFORM - DATABASE SCHEMA V2 (DBML for dbdiagram.io)
+// ============================================================================
+// Author: Serhii Sokyrko
+// Date: October 2025
+// Sprint: 2
+// Database: PostgreSQL 15+ (Supabase)
+//
+// Instructions:
+// 1. Go to https://dbdiagram.io/d
+// 2. Copy this ENTIRE file
+// 3. Paste into the editor
+// 4. Export as PNG
+// ============================================================================
+
+// ============================================================================
+// USER SERVICE TABLES
+// ============================================================================
+
+Table users {
+  id uuid [pk]
+  email varchar(255) [unique, not null]
+  password_hash varchar(255)
+  email_verified boolean [default: false]
+  oauth_provider varchar(50)
+  oauth_id varchar(255)
+  role varchar(20) [default: 'user']
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+  last_login_at timestamp
+
+  Note: 'User accounts for authentication and authorization. Soft delete via deleted_at (GDPR 30-day grace period)'
+}
+
+Table user_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null, ref: - users.id]
+  display_name varchar(100) [not null]
+  avatar_url varchar(500)
+  bio text
+  date_of_birth date [not null]
+  country varchar(2)
+  verified boolean [default: false]
+  verified_at timestamp
+  verification_session_id varchar(255)
+  total_drinks int [default: 0]
+  total_points int [default: 0]
+  global_rank int
+  streak_days int [default: 0]
+  last_activity_date date
+  created_at timestamp
+  updated_at timestamp
+
+  Note: '1:1 with users. Profile information and cached stats (eventual consistency from events)'
+}
+
+Table verifications {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  session_id varchar(255) [unique, not null]
+  status varchar(20) [default: 'pending']
+  verification_url varchar(500)
+  decline_reason varchar(255)
+  person_data jsonb
+  verified_at timestamp
+  created_at timestamp
+
+  Note: 'Veriff KYC verification records. Status: pending, approved, declined, expired'
+}
+
+Table friendships {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  friend_id uuid [not null, ref: > users.id]
+  status varchar(20) [default: 'pending']
+  created_at timestamp
+  accepted_at timestamp
+
+  Note: 'User friendships (bidirectional). Status: pending, accepted, blocked'
+}
+
+Table teams {
+  id uuid [pk]
+  name varchar(100) [not null]
+  description text
+  avatar_url varchar(500)
+  created_by uuid [ref: > users.id]
+  max_members int [default: 50]
+  visibility varchar(20) [default: 'public']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'Teams/Squads for group competitions (FR-25)'
+}
+
+Table team_members {
+  id uuid [pk]
+  team_id uuid [not null, ref: > teams.id]
+  user_id uuid [not null, ref: > users.id]
+  role varchar(20) [default: 'member']
+  joined_at timestamp
+
+  Note: 'Team membership (many-to-many). Role: member, admin'
+}
+
+Table user_consents {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  consent_type varchar(50) [not null]
+  granted boolean [default: false]
+  granted_at timestamp
+  withdrawn_at timestamp
+  ip_address varchar(45)
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'GDPR consent records. Types: marketing_emails, push_notifications, analytics, facial_biometrics'
+}
+
+// ============================================================================
+// COMPETITION SERVICE TABLES
+// ============================================================================
+
+Table competitions {
+  id uuid [pk]
+  name varchar(200) [not null]
+  description text
+  venue_id uuid [ref: > venues.id]
+  start_time timestamp [not null]
+  end_time timestamp [not null]
+  max_participants int [default: 1000]
+  entry_fee decimal(10,2) [default: 0.00]
+  prize_pool decimal(10,2) [default: 0.00]
+  verification_required boolean [default: true]
+  status varchar(20) [default: 'upcoming']
+  visibility varchar(20) [default: 'public']
+  rules text
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'Competition metadata. Status: upcoming, active, completed, cancelled. Visibility: public, private, invite_only'
+}
+
+Table competition_participants {
+  id uuid [pk]
+  competition_id uuid [not null, ref: > competitions.id]
+  user_id uuid [not null, ref: > users.id]
+  registered_at timestamp
+  checked_in_at timestamp
+  final_rank int
+  final_score int
+  prize_amount decimal(10,2) [default: 0.00]
+  status varchar(20) [default: 'active']
+
+  Indexes {
+    (competition_id, user_id) [unique]
+  }
+
+  Note: 'User participation in competitions (many-to-many). Status: active, disqualified, completed'
+}
+
+Table venues {
+  id uuid [pk]
+  name varchar(200) [not null]
+  address text [not null]
+  city varchar(100) [not null]
+  country varchar(2) [not null]
+  latitude decimal(10,8) [not null]
+  longitude decimal(11,8) [not null]
+  capacity int
+  verified boolean [default: false]
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'Competition venues with GPS coordinates (FR-30, FR-50). Uses PostGIS for spatial queries'
+}
+
+Table predictions {
+  id uuid [pk]
+  competition_id uuid [not null, ref: > competitions.id]
+  user_id uuid [not null, ref: > users.id]
+  prediction_type varchar(20) [not null]
+  predicted_winner_id uuid [ref: > users.id]
+  predicted_top3 jsonb
+  predicted_score int
+  points_earned int [default: 0]
+  locked_at timestamp
+  created_at timestamp
+
+  Indexes {
+    (competition_id, user_id) [unique]
+  }
+
+  Note: 'Competition outcome predictions (FR-35). Types: winner, top3, top5, score. Locked 5 min before start'
+}
+
+// ============================================================================
+// CHAT SERVICE TABLES
+// ============================================================================
+
+Table chat_rooms {
+  id uuid [pk]
+  name varchar(200)
+  room_type varchar(20) [not null]
+  competition_id uuid [ref: > competitions.id]
+  team_id uuid [ref: > teams.id]
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'Chat room metadata. Types: competition, team, direct'
+}
+
+Table chat_room_members {
+  id uuid [pk]
+  chat_room_id uuid [not null, ref: > chat_rooms.id]
+  user_id uuid [not null, ref: > users.id]
+  joined_at timestamp
+  last_read_at timestamp
+  role varchar(20) [default: 'member']
+
+  Indexes {
+    (chat_room_id, user_id) [unique]
+  }
+
+  Note: 'Chat room membership (many-to-many). Role: member, admin, moderator'
+}
+
+Table messages {
+  id uuid [pk]
+  chat_room_id uuid [not null, ref: > chat_rooms.id]
+  user_id uuid [ref: > users.id]
+  message_type varchar(20) [default: 'text']
+  content text [not null]
+  image_url varchar(500)
+  metadata jsonb
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+
+  Note: 'Chat messages (30-day retention). Types: text, image, system. Max 2000 chars. Soft delete'
+}
+
+// ============================================================================
+// ADMIN SERVICE TABLES
+// ============================================================================
+
+Table reports {
+  id uuid [pk]
+  reporter_id uuid [not null, ref: > users.id]
+  reported_user_id uuid [ref: > users.id]
+  reported_message_id uuid [ref: > messages.id]
+  reported_competition_id uuid [ref: > competitions.id]
+  report_type varchar(50) [not null]
+  reason text [not null]
+  status varchar(20) [default: 'pending']
+  resolved_by uuid [ref: > users.id]
+  resolution_action varchar(50)
+  resolution_notes text
+  created_at timestamp
+  resolved_at timestamp
+
+  Note: 'Content moderation reports (FR-38). Types: user_behavior, inappropriate_content, cheating, spam. Status: pending, reviewing, resolved, dismissed'
+}
+
+Table moderation_actions {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  moderator_id uuid [not null, ref: > users.id]
+  action_type varchar(20) [not null]
+  reason text [not null]
+  duration_days int
+  expires_at timestamp
+  created_at timestamp
+
+  Note: 'User moderation actions (FR-28). Types: warn, mute, ban, unban. Duration NULL = permanent'
+}
+
+// ============================================================================
+// EVENT SOURCING & GAMIFICATION TABLES
+// ============================================================================
+
+Table events {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  competition_id uuid [ref: > competitions.id]
+  event_type varchar(50) [default: 'drink_recorded']
+  amount int
+  points int
+  metadata jsonb
+  created_at timestamp
+  processed_at timestamp
+
+  Note: 'Event sourcing log (90-day retention). Types: drink_recorded, badge_earned, streak_updated. Written by Projector Service'
+}
+
+Table badges {
+  id uuid [pk]
+  name varchar(100) [unique, not null]
+  description text [not null]
+  icon_url varchar(500)
+  criteria jsonb [not null]
+  rarity varchar(20) [default: 'common']
+  created_at timestamp
+
+  Note: 'Badge definitions (FR-33). Rarity: common, rare, epic, legendary. Criteria JSON: {"total_drinks": 100}'
+}
+
+Table user_badges {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  badge_id uuid [not null, ref: > badges.id]
+  earned_at timestamp
+
+  Indexes {
+    (user_id, badge_id) [unique]
+  }
+
+  Note: 'Badges earned by users (many-to-many)'
+}
+
+Table notifications {
+  id uuid [pk]
+  user_id uuid [not null, ref: > users.id]
+  notification_type varchar(50) [not null]
+  title varchar(200) [not null]
+  body text [not null]
+  data jsonb
+  read_at timestamp
+  sent_at timestamp
+  created_at timestamp
+
+  Note: 'Push notification records (FR-18). Types: competition_start, friend_request, badge_earned, etc.'
+}
+
+// ============================================================================
+// GDPR & AUDIT TABLES
+// ============================================================================
+
+Table audit_logs {
+  id uuid [pk]
+  user_id uuid [ref: > users.id]
+  action varchar(100) [not null]
+  resource_type varchar(50)
+  resource_id uuid
+  metadata jsonb
+  ip_address varchar(45)
+  user_agent text
+  created_at timestamp
+
+  Note: 'Audit trail for security and GDPR (90-day retention). Actions: user_login, profile_updated, account_deleted'
+}

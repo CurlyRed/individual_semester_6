@@ -1,0 +1,663 @@
+// ============================================================================
+// WCD PLATFORM - DATABASE SCHEMA V2 (DBML for dbdiagram.io)
+// ============================================================================
+// Author: Serhii Sokyrko
+// Date: October 2025
+// Sprint: 2
+// Database: PostgreSQL 15+ (Supabase)
+// Learning Outcome: LO7 (Distributed Data)
+//
+// Purpose:
+// Complete database schema for the WCD Platform supporting all 9 microservices
+// Includes Competition Service, Admin Service, Chat Service, User Service
+//
+// How to use:
+// 1. Copy this entire file
+// 2. Go to https://dbdiagram.io/d
+// 3. Paste into the editor
+// 4. Click "Export" to download as PNG/PDF
+// ============================================================================
+
+Project WCD_Platform {
+  database_type: 'PostgreSQL 15+'
+  note: '''
+    # WCD Platform Database Schema
+    Event-driven competition platform with microservices architecture
+
+    **Key Features:**
+    - ACID Guarantees (Foreign Keys, Transactions)
+    - GDPR Compliance (Soft Deletes, Audit Trails)
+    - UUID Primary Keys (Distributed-Friendly)
+    - Strategic Indexes for Performance
+  '''
+}
+
+// ============================================================================
+// USER SERVICE TABLES
+// ============================================================================
+
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  email varchar(255) [unique, not null]
+  password_hash varchar(255) [note: 'bcrypt hash, nullable for OAuth users']
+  email_verified boolean [default: false]
+  oauth_provider varchar(50) [note: 'google, github, apple, null']
+  oauth_id varchar(255)
+  role varchar(20) [default: 'user', note: 'user, admin, moderator']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  deleted_at timestamp [note: 'Soft delete - GDPR 30-day grace period']
+  last_login_at timestamp
+
+  indexes {
+    (email) [where: 'deleted_at IS NULL']
+    (oauth_provider, oauth_id) [where: 'deleted_at IS NULL']
+    (deleted_at) [where: 'deleted_at IS NOT NULL', note: 'For cleanup jobs']
+  }
+
+  note: 'User accounts for authentication and authorization'
+}
+
+Table user_profiles {
+  id uuid [pk]
+  user_id uuid [unique, not null, ref: - users.id]
+  display_name varchar(100) [not null]
+  avatar_url varchar(500) [note: 'Cloudflare R2 URL']
+  bio text [note: 'Max 500 chars']
+  date_of_birth date [not null, note: 'Required for 18+ age verification']
+  country varchar(2) [note: 'ISO 3166-1 alpha-2 (e.g., NL, DE)']
+  verified boolean [default: false, note: 'Veriff KYC status']
+  verified_at timestamp
+  verification_session_id varchar(255)
+  total_drinks int [default: 0, note: 'Cached from events (eventual consistency)']
+  total_points int [default: 0]
+  global_rank int [note: 'Updated daily by batch job']
+  streak_days int [default: 0]
+  last_activity_date date
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id)
+    (verified) [where: 'verified = TRUE']
+    (global_rank) [where: 'global_rank IS NOT NULL']
+    (total_drinks) [type: btree, note: 'DESC for leaderboard fallback']
+  }
+
+  note: '1:1 relationship with users. Profile information.'
+}
+
+Table verifications {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  session_id varchar(255) [unique, not null, note: 'Veriff session ID']
+  status varchar(20) [default: 'pending', note: 'pending, approved, declined, expired']
+  verification_url varchar(500)
+  decline_reason varchar(255)
+  person_data jsonb [note: 'Extracted data (name, DOB) from Veriff']
+  verified_at timestamp
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id, created_at)
+    (session_id)
+    (status)
+  }
+
+  note: 'KYC verification records (Veriff integration)'
+}
+
+Table friendships {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  friend_id uuid [not null, ref: > users.id]
+  status varchar(20) [default: 'pending', note: 'pending, accepted, blocked']
+  created_at timestamp [default: `now()`]
+  accepted_at timestamp
+
+  indexes {
+    (user_id, friend_id) [unique]
+    (user_id)
+    (friend_id)
+    (status)
+  }
+
+  note: 'User friendship relationships (bidirectional)'
+}
+
+Table teams {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(100) [not null]
+  description text
+  avatar_url varchar(500)
+  created_by uuid [ref: > users.id]
+  max_members int [default: 50]
+  visibility varchar(20) [default: 'public', note: 'public, private']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (created_by)
+    (visibility)
+  }
+
+  note: 'Teams/Squads for group competitions (FR-25)'
+}
+
+Table team_members {
+  id uuid [pk, default: `gen_random_uuid()`]
+  team_id uuid [not null, ref: > teams.id]
+  user_id uuid [not null, ref: > users.id]
+  role varchar(20) [default: 'member', note: 'member, admin']
+  joined_at timestamp [default: `now()`]
+
+  indexes {
+    (team_id, user_id) [unique]
+    (team_id)
+    (user_id)
+  }
+
+  note: 'Team membership (many-to-many)'
+}
+
+Table user_consents {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  consent_type varchar(50) [not null, note: 'marketing_emails, push_notifications, analytics, facial_biometrics']
+  granted boolean [default: false]
+  granted_at timestamp
+  withdrawn_at timestamp
+  ip_address inet [note: 'IP when consent given (GDPR audit trail)']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id)
+    (consent_type)
+  }
+
+  note: 'GDPR consent records (Article 7)'
+}
+
+// ============================================================================
+// COMPETITION SERVICE TABLES
+// ============================================================================
+
+Table competitions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(200) [not null]
+  description text
+  venue_id uuid [ref: > venues.id]
+  start_time timestamp [not null]
+  end_time timestamp [not null]
+  max_participants int [default: 1000]
+  entry_fee decimal(10,2) [default: 0.00]
+  prize_pool decimal(10,2) [default: 0.00]
+  verification_required boolean [default: true, note: 'Require Veriff KYC']
+  status varchar(20) [default: 'upcoming', note: 'upcoming, active, completed, cancelled']
+  visibility varchar(20) [default: 'public', note: 'public, private, invite_only']
+  rules text [note: 'Competition rules (JSON or markdown)']
+  created_by uuid [ref: > users.id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (status)
+    (start_time, end_time)
+    (created_by)
+    (venue_id)
+  }
+
+  note: 'Competition metadata and configuration'
+}
+
+Table competition_participants {
+  id uuid [pk, default: `gen_random_uuid()`]
+  competition_id uuid [not null, ref: > competitions.id]
+  user_id uuid [not null, ref: > users.id]
+  registered_at timestamp [default: `now()`]
+  checked_in_at timestamp [note: 'GPS check-in timestamp (FR-30)']
+  final_rank int [note: 'Rank at competition end (NULL during active)']
+  final_score int [note: 'Total drinks during competition']
+  prize_amount decimal(10,2) [default: 0.00]
+  status varchar(20) [default: 'active', note: 'active, disqualified, completed']
+
+  indexes {
+    (competition_id, user_id) [unique]
+    (competition_id)
+    (user_id)
+    (competition_id, final_rank) [where: 'final_rank IS NOT NULL']
+  }
+
+  note: 'User participation in competitions (many-to-many)'
+}
+
+Table venues {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(200) [not null]
+  address text [not null]
+  city varchar(100) [not null]
+  country varchar(2) [not null, note: 'ISO 3166-1 alpha-2']
+  latitude decimal(10,8) [not null, note: 'GPS latitude']
+  longitude decimal(11,8) [not null, note: 'GPS longitude']
+  location geography [note: 'PostGIS GEOGRAPHY for spatial queries']
+  capacity int
+  verified boolean [default: false, note: 'Admin-verified venue']
+  created_by uuid [ref: > users.id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (location) [type: gist, note: 'PostGIS spatial index for nearby search (FR-50)']
+    (city, country)
+    (verified)
+  }
+
+  note: 'Competition venues with GPS coordinates (FR-30, FR-50)'
+}
+
+Table predictions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  competition_id uuid [not null, ref: > competitions.id]
+  user_id uuid [not null, ref: > users.id]
+  prediction_type varchar(20) [not null, note: 'winner, top3, top5, score']
+  predicted_winner_id uuid [ref: > users.id]
+  predicted_top3 jsonb [note: 'Array of user IDs [uuid1, uuid2, uuid3]']
+  predicted_score int
+  points_earned int [default: 0, note: 'Points earned after competition ends']
+  locked_at timestamp [note: 'Predictions locked 5 min before start (FR-35)']
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (competition_id, user_id) [unique]
+    (competition_id)
+    (user_id)
+  }
+
+  note: 'User predictions for competition outcomes (FR-35)'
+}
+
+// ============================================================================
+// CHAT SERVICE TABLES
+// ============================================================================
+
+Table chat_rooms {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(200)
+  room_type varchar(20) [not null, note: 'competition, team, direct']
+  competition_id uuid [ref: > competitions.id]
+  team_id uuid [ref: > teams.id]
+  created_by uuid [ref: > users.id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (room_type)
+    (competition_id) [where: 'competition_id IS NOT NULL']
+    (team_id) [where: 'team_id IS NOT NULL']
+  }
+
+  note: 'Chat room metadata (competitions, teams, direct messages)'
+}
+
+Table chat_room_members {
+  id uuid [pk, default: `gen_random_uuid()`]
+  chat_room_id uuid [not null, ref: > chat_rooms.id]
+  user_id uuid [not null, ref: > users.id]
+  joined_at timestamp [default: `now()`]
+  last_read_at timestamp [note: 'For unread message count']
+  role varchar(20) [default: 'member', note: 'member, admin, moderator']
+
+  indexes {
+    (chat_room_id, user_id) [unique]
+    (chat_room_id)
+    (user_id)
+  }
+
+  note: 'Chat room membership (many-to-many)'
+}
+
+Table messages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  chat_room_id uuid [not null, ref: > chat_rooms.id]
+  user_id uuid [ref: > users.id, note: 'NULL for system messages']
+  message_type varchar(20) [default: 'text', note: 'text, image, system']
+  content text [not null, note: 'Max 2000 chars']
+  image_url varchar(500) [note: 'Cloudflare R2 URL for images']
+  metadata jsonb [note: 'Mentions, reactions, etc.']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  deleted_at timestamp [note: 'Soft delete']
+
+  indexes {
+    (chat_room_id, created_at) [where: 'deleted_at IS NULL', note: 'DESC for latest messages']
+    (user_id) [where: 'deleted_at IS NULL']
+    (created_at) [note: 'For 30-day retention cleanup']
+  }
+
+  note: 'Chat messages (30-day retention policy)'
+}
+
+// ============================================================================
+// ADMIN SERVICE TABLES
+// ============================================================================
+
+Table reports {
+  id uuid [pk, default: `gen_random_uuid()`]
+  reporter_id uuid [not null, ref: > users.id]
+  reported_user_id uuid [ref: > users.id]
+  reported_message_id uuid [ref: > messages.id]
+  reported_competition_id uuid [ref: > competitions.id]
+  report_type varchar(50) [not null, note: 'user_behavior, inappropriate_content, cheating, spam, other']
+  reason text [not null]
+  status varchar(20) [default: 'pending', note: 'pending, reviewing, resolved, dismissed']
+  resolved_by uuid [ref: > users.id, note: 'Admin who resolved']
+  resolution_action varchar(50) [note: 'warning_issued, user_banned, content_deleted, no_action']
+  resolution_notes text
+  created_at timestamp [default: `now()`]
+  resolved_at timestamp
+
+  indexes {
+    (status)
+    (reporter_id)
+    (reported_user_id)
+    (created_at)
+  }
+
+  note: 'Content moderation reports (FR-38)'
+}
+
+Table moderation_actions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id, note: 'User being moderated']
+  moderator_id uuid [not null, ref: > users.id, note: 'Admin/moderator taking action']
+  action_type varchar(20) [not null, note: 'warn, mute, ban, unban']
+  reason text [not null]
+  duration_days int [note: 'Ban/mute duration (NULL = permanent)']
+  expires_at timestamp [note: 'When ban/mute expires']
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id, created_at)
+    (moderator_id)
+    (action_type)
+  }
+
+  note: 'User moderation actions (ban, warn, mute) - FR-28'
+}
+
+// ============================================================================
+// EVENT SOURCING & GAMIFICATION TABLES
+// ============================================================================
+
+Table events {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  competition_id uuid [ref: > competitions.id]
+  event_type varchar(50) [default: 'drink_recorded', note: 'drink_recorded, badge_earned, streak_updated']
+  amount int [note: 'Drinks recorded (1-10)']
+  points int [note: 'Points earned (calculated by Projector)']
+  metadata jsonb [note: 'Location, drink type, etc.']
+  created_at timestamp [default: `now()`]
+  processed_at timestamp [note: 'When Projector Service processed event']
+
+  indexes {
+    (user_id, created_at) [note: 'DESC']
+    (competition_id, created_at) [note: 'DESC']
+    (created_at) [note: 'For 90-day retention cleanup']
+  }
+
+  note: 'Event sourcing log (90-day retention policy)'
+}
+
+Table badges {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(100) [unique, not null]
+  description text [not null]
+  icon_url varchar(500)
+  criteria jsonb [not null, note: 'e.g., {"total_drinks": 100}']
+  rarity varchar(20) [default: 'common', note: 'common, rare, epic, legendary']
+  created_at timestamp [default: `now()`]
+
+  note: 'Badge definitions (achievements) - FR-33'
+}
+
+Table user_badges {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  badge_id uuid [not null, ref: > badges.id]
+  earned_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id, badge_id) [unique]
+    (user_id)
+    (earned_at) [note: 'DESC']
+  }
+
+  note: 'Badges earned by users (many-to-many)'
+}
+
+Table notifications {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  notification_type varchar(50) [not null, note: 'competition_start, friend_request, badge_earned, etc.']
+  title varchar(200) [not null]
+  body text [not null]
+  data jsonb [note: 'Additional payload (competition_id, etc.)']
+  read_at timestamp
+  sent_at timestamp
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id, created_at) [note: 'DESC']
+    (user_id, read_at) [where: 'read_at IS NULL', note: 'Unread notifications']
+  }
+
+  note: 'Push notification records (FR-18)'
+}
+
+// ============================================================================
+// GDPR & AUDIT TABLES
+// ============================================================================
+
+Table audit_logs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id]
+  action varchar(100) [not null, note: 'user_login, profile_updated, account_deleted']
+  resource_type varchar(50) [note: 'user, competition, message']
+  resource_id uuid
+  metadata jsonb [note: 'Changed fields, IP, etc.']
+  ip_address inet
+  user_agent text
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (user_id)
+    (action)
+    (created_at) [note: 'For 90-day retention cleanup']
+  }
+
+  note: 'Audit trail for security and GDPR (90-day retention)'
+}
+
+// ============================================================================
+// RELATIONSHIPS SUMMARY
+// ============================================================================
+
+// User Service Relationships
+Ref: user_profiles.user_id - users.id [delete: cascade]
+Ref: verifications.user_id > users.id [delete: cascade]
+Ref: friendships.user_id > users.id [delete: cascade]
+Ref: friendships.friend_id > users.id [delete: cascade]
+Ref: teams.created_by > users.id [delete: set null]
+Ref: team_members.team_id > teams.id [delete: cascade]
+Ref: team_members.user_id > users.id [delete: cascade]
+Ref: user_consents.user_id > users.id [delete: cascade]
+
+// Competition Service Relationships
+Ref: competitions.venue_id > venues.id [delete: set null]
+Ref: competitions.created_by > users.id [delete: set null]
+Ref: competition_participants.competition_id > competitions.id [delete: cascade]
+Ref: competition_participants.user_id > users.id [delete: cascade]
+Ref: venues.created_by > users.id [delete: set null]
+Ref: predictions.competition_id > competitions.id [delete: cascade]
+Ref: predictions.user_id > users.id [delete: cascade]
+Ref: predictions.predicted_winner_id > users.id [delete: set null]
+
+// Chat Service Relationships
+Ref: chat_rooms.competition_id > competitions.id [delete: cascade]
+Ref: chat_rooms.team_id > teams.id [delete: cascade]
+Ref: chat_rooms.created_by > users.id [delete: set null]
+Ref: chat_room_members.chat_room_id > chat_rooms.id [delete: cascade]
+Ref: chat_room_members.user_id > users.id [delete: cascade]
+Ref: messages.chat_room_id > chat_rooms.id [delete: cascade]
+Ref: messages.user_id > users.id [delete: set null]
+
+// Admin Service Relationships
+Ref: reports.reporter_id > users.id [delete: cascade]
+Ref: reports.reported_user_id > users.id [delete: set null]
+Ref: reports.reported_message_id > messages.id [delete: set null]
+Ref: reports.reported_competition_id > competitions.id [delete: set null]
+Ref: reports.resolved_by > users.id [delete: set null]
+Ref: moderation_actions.user_id > users.id [delete: cascade]
+Ref: moderation_actions.moderator_id > users.id [delete: set null]
+
+// Event Sourcing & Gamification Relationships
+Ref: events.user_id > users.id [delete: cascade]
+Ref: events.competition_id > competitions.id [delete: set null]
+Ref: user_badges.user_id > users.id [delete: cascade]
+Ref: user_badges.badge_id > badges.id [delete: cascade]
+Ref: notifications.user_id > users.id [delete: cascade]
+
+// Audit Relationships
+Ref: audit_logs.user_id > users.id [delete: set null]
+
+// ============================================================================
+// TABLE GROUPS (for visual organization in dbdiagram.io)
+// ============================================================================
+
+TableGroup user_service {
+  users
+  user_profiles
+  verifications
+  friendships
+  teams
+  team_members
+  user_consents
+}
+
+TableGroup competition_service {
+  competitions
+  competition_participants
+  venues
+  predictions
+}
+
+TableGroup chat_service {
+  chat_rooms
+  chat_room_members
+  messages
+}
+
+TableGroup admin_service {
+  reports
+  moderation_actions
+}
+
+TableGroup event_sourcing {
+  events
+  badges
+  user_badges
+  notifications
+}
+
+TableGroup gdpr_compliance {
+  audit_logs
+}
+
+// ============================================================================
+// NOTES
+// ============================================================================
+
+Note relationships {
+  '''
+  # Key Database Design Decisions
+
+  ## 1. UUID Primary Keys
+  - Distributed-friendly (no coordination needed)
+  - Secure (non-sequential, hard to enumerate)
+  - Compatible with event sourcing
+
+  ## 2. Soft Deletes (GDPR Compliance)
+  - `users.deleted_at`: 30-day grace period before hard delete
+  - `messages.deleted_at`: User-initiated message deletion
+  - Cleanup jobs run weekly/daily
+
+  ## 3. Eventual Consistency
+  - `user_profiles.total_drinks`: Cached from events (updated by Projector)
+  - `user_profiles.global_rank`: Updated daily by batch job
+  - Redis serves as source of truth for real-time leaderboards
+
+  ## 4. Data Retention Policies
+  - **Messages**: 30 days
+  - **Events**: 90 days
+  - **Audit Logs**: 90 days
+  - **Deleted Users**: 30-day grace period
+
+  ## 5. PostGIS for Geospatial Queries
+  - `venues.location`: GEOGRAPHY type for "nearby venue" queries (FR-50)
+  - GIST index for spatial performance
+  - Supports ST_Distance for radius searches
+
+  ## 6. JSONB for Flexibility
+  - Badge criteria: `{"total_drinks": 100, "streak_days": 7}`
+  - Event metadata: Location, drink type, custom fields
+  - Message metadata: Mentions, reactions
+  - Prediction data: Top 3 user IDs array
+
+  ## 7. Foreign Key Cascade Rules
+  - `ON DELETE CASCADE`: Child records deleted automatically
+  - `ON DELETE SET NULL`: Preserve data but remove reference
+  - Ensures referential integrity
+  '''
+}
+
+// ============================================================================
+// DATABASE STATISTICS
+// ============================================================================
+
+Note statistics {
+  '''
+  # Schema Statistics
+
+  **Total Tables**: 25
+
+  ## By Service:
+  - User Service: 7 tables
+  - Competition Service: 4 tables
+  - Chat Service: 3 tables
+  - Admin Service: 2 tables
+  - Event Sourcing: 4 tables
+  - GDPR Compliance: 1 table
+  - Shared: 4 tables
+
+  ## Relationships:
+  - Total Foreign Keys: 40+
+  - One-to-One: 1 (users ↔ user_profiles)
+  - One-to-Many: 30+
+  - Many-to-Many: 9 (via junction tables)
+
+  ## Indexes:
+  - Total Indexes: 50+
+  - B-tree: 45+ (standard indexes)
+  - GiST: 1 (PostGIS spatial index)
+  - Partial Indexes: 10+ (WHERE clauses for performance)
+
+  ## Expected Growth (1 year, 10K users):
+  - users: ~10K rows (5MB)
+  - events: ~10M rows (2GB) → archived after 90 days
+  - messages: ~5M rows (1GB) → deleted after 30 days
+  - competitions: ~1K rows (500KB)
+  - Total Database Size: ~3-5GB
+  '''
+}
