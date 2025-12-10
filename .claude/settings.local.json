@@ -39,7 +39,11 @@
       "Bash(kubectl describe:*)",
       "Bash(kubectl rollout:*)",
       "Bash(timeout /t 10 /nobreak)",
-      "Bash(gcloud version:*)"
+      "Bash(gcloud version:*)",
+      "Bash(cmd /c:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(kubectl exec:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
