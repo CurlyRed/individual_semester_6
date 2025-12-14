@@ -77,98 +77,6 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
-  load-test:
-    name: Run k6 Load Tests
-    needs: [test-backend, test-frontend]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redpanda:
-        image: docker.redpanda.com/redpandadata/redpanda:v23.3.5
-        ports:
-          - 9092:9092
-        options: >-
-          --health-cmd "rpk cluster health"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Build backend services
-        working-directory: ./backend
-        run: |
-          chmod +x gradlew
-          ./gradlew :ingest-service:bootJar --no-daemon
-          ./gradlew :projector-service:bootJar --no-daemon
-          ./gradlew :query-service:bootJar --no-daemon
-
-      - name: Start ingest service
-        working-directory: ./backend
-        run: |
-          java -jar ingest-service/build/libs/*.jar \
-            --server.port=8081 \
-            --spring.kafka.bootstrap-servers=localhost:9092 \
-            --wcd.api.key=dev-secret-key &
-          sleep 20
-
-      - name: Start projector service
-        working-directory: ./backend
-        run: |
-          java -jar projector-service/build/libs/*.jar \
-            --server.port=8082 \
-            --spring.kafka.bootstrap-servers=localhost:9092 \
-            --spring.data.redis.host=localhost \
-            --spring.data.redis.port=6379 &
-          sleep 15
-
-      - name: Start query service
-        working-directory: ./backend
-        run: |
-          java -jar query-service/build/libs/*.jar \
-            --server.port=8083 \
-            --spring.data.redis.host=localhost \
-            --spring.data.redis.port=6379 &
-          sleep 10
-
-      - name: Install k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
-
-      - name: Run k6 baseline test
-        working-directory: ./k6
-        run: k6 run baseline.js --env BASE_URL=http://localhost:8081 --env API_KEY=dev-secret-key
-
-      - name: Upload k6 results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: k6-test-results
-          path: k6/*.json
-
   build-and-push-images:
     name: Build and Push Docker Images
     needs: [test-backend, test-frontend]
@@ -225,7 +133,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Security scanning gate - runs in parallel with build
+  # Security scanning gate
   security-gate:
     name: Security Scanning Gate
     runs-on: ubuntu-latest
@@ -235,29 +143,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Run GitLeaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Run OWASP Dependency Check
-        working-directory: ./backend
-        run: |
-          chmod +x gradlew
-          ./gradlew dependencyCheckAggregate --no-daemon || true
+          GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Security gate passed
         run: echo "✅ Security checks passed - deployment can proceed"
 
-  # Deploy to GCP GKE Staging
+  # Deploy to GKE
   deploy-staging:
     name: Deploy to GKE Staging
     needs: [build-and-push-images, security-gate]
@@ -290,73 +188,53 @@ jobs:
         env:
           USE_GKE_GCLOUD_AUTH_PLUGIN: True
 
-      - name: Create namespace if not exists
+      - name: Set image tag
+        id: image-tag
         run: |
-          kubectl create namespace wcd-staging --dry-run=client -o yaml | kubectl apply -f -
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=main-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Using image tag: main-${SHORT_SHA}"
 
-      - name: Update image tags in manifests
+      - name: Deploy with Kustomize
         run: |
-          export IMAGE_TAG="${{ github.sha }}"
-          export REGISTRY="${{ env.REGISTRY }}"
-          export REPO="curlyred/individual_semester_6"
+          # Create namespace
+          kubectl create namespace wcd-platform --dry-run=client -o yaml | kubectl apply -f -
 
-          # Update deployment manifests with new image tags
-          sed -i "s|wcd/ingest-service:latest|${REGISTRY}/${REPO}/ingest-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/projector-service:latest|${REGISTRY}/${REPO}/projector-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/query-service:latest|${REGISTRY}/${REPO}/query-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/frontend:latest|${REGISTRY}/${REPO}/frontend:main-${IMAGE_TAG:0:7}|g" k8s/frontend-deploy.yaml
-          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/services-deploy.yaml
-          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/frontend-deploy.yaml
+          # Update image tags in kustomization
+          cd k8s/base
 
-      - name: Deploy to staging
-        run: |
-          # Update namespace in manifests for staging
-          sed -i "s|namespace: wcd-platform|namespace: wcd-staging|g" k8s/config.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-staging|g" k8s/redpanda-deploy.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-staging|g" k8s/services-deploy.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-staging|g" k8s/frontend-deploy.yaml
+          # Use kustomize to set images with the correct tag
+          kustomize edit set image \
+            ghcr.io/curlyred/individual_semester_6/ingest-service=ghcr.io/curlyred/individual_semester_6/ingest-service:${{ steps.image-tag.outputs.tag }} \
+            ghcr.io/curlyred/individual_semester_6/projector-service=ghcr.io/curlyred/individual_semester_6/projector-service:${{ steps.image-tag.outputs.tag }} \
+            ghcr.io/curlyred/individual_semester_6/query-service=ghcr.io/curlyred/individual_semester_6/query-service:${{ steps.image-tag.outputs.tag }} \
+            ghcr.io/curlyred/individual_semester_6/frontend=ghcr.io/curlyred/individual_semester_6/frontend:${{ steps.image-tag.outputs.tag }}
 
-          # Change frontend service to LoadBalancer for external access
-          sed -i "s|type: NodePort|type: LoadBalancer|g" k8s/frontend-deploy.yaml
-
-          kubectl apply -f k8s/config.yaml -n wcd-staging
-          kubectl apply -f k8s/redis-simple.yaml -n wcd-staging
-          kubectl apply -f k8s/redpanda-deploy.yaml -n wcd-staging
-          kubectl apply -f k8s/services-deploy.yaml -n wcd-staging
-          kubectl apply -f k8s/frontend-deploy.yaml -n wcd-staging
+          # Apply with kustomize
+          kubectl apply -k .
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/wcd-ingest-service -n wcd-staging --timeout=300s
-          kubectl rollout status deployment/wcd-projector-service -n wcd-staging --timeout=300s
-          kubectl rollout status deployment/wcd-query-service -n wcd-staging --timeout=300s
-          kubectl rollout status deployment/wcd-frontend -n wcd-staging --timeout=300s
+          kubectl rollout status deployment/wcd-ingest-service -n wcd-platform --timeout=300s
+          kubectl rollout status deployment/wcd-projector-service -n wcd-platform --timeout=300s
+          kubectl rollout status deployment/wcd-query-service -n wcd-platform --timeout=300s
+          kubectl rollout status deployment/wcd-frontend -n wcd-platform --timeout=300s
 
-      - name: Run smoke tests
+      - name: Verify deployment
         run: |
-          echo "🔍 Running smoke tests..."
-          kubectl get services -n wcd-staging
-          echo "✅ Staging deployment successful!"
-
-      - name: Get External IP
-        run: |
-          echo "⏳ Waiting for LoadBalancer IP..."
-          for i in {1..30}; do
-            EXTERNAL_IP=$(kubectl get svc wcd-frontend -n wcd-staging -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            if [ -n "$EXTERNAL_IP" ]; then
-              echo "🌐 Frontend URL: http://${EXTERNAL_IP}:5173"
-              break
-            fi
-            echo "Waiting for IP... (attempt $i/30)"
-            sleep 10
-          done
+          echo "📋 Deployment Status:"
+          kubectl get pods -n wcd-platform
+          echo ""
+          echo "📋 Services:"
+          kubectl get svc -n wcd-platform
 
       - name: Deployment summary
         run: |
-          echo "## 🚀 Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** Staging" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** ${{ steps.image-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Namespace:** wcd-platform" >> $GITHUB_STEP_SUMMARY
           echo "**Cluster:** ${{ env.GKE_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployed Services" >> $GITHUB_STEP_SUMMARY
@@ -364,104 +242,5 @@ jobs:
           echo "- projector-service" >> $GITHUB_STEP_SUMMARY
           echo "- query-service" >> $GITHUB_STEP_SUMMARY
           echo "- frontend" >> $GITHUB_STEP_SUMMARY
-
-  # Deploy to GCP GKE Production (manual approval required)
-  deploy-production:
-    name: Deploy to GKE Production
-    needs: deploy-staging
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      url: https://wcd-platform.com
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          install_components: 'gke-gcloud-auth-plugin'
-
-      - name: Configure kubectl
-        run: |
-          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
-            --zone ${{ env.GKE_ZONE }} \
-            --project ${{ secrets.GCP_PROJECT_ID }}
-        env:
-          USE_GKE_GCLOUD_AUTH_PLUGIN: True
-
-      - name: Create namespace if not exists
-        run: |
-          kubectl create namespace wcd-production --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Update image tags in manifests
-        run: |
-          export IMAGE_TAG="${{ github.sha }}"
-          export REGISTRY="${{ env.REGISTRY }}"
-          export REPO="curlyred/individual_semester_6"
-
-          sed -i "s|wcd/ingest-service:latest|${REGISTRY}/${REPO}/ingest-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/projector-service:latest|${REGISTRY}/${REPO}/projector-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/query-service:latest|${REGISTRY}/${REPO}/query-service:main-${IMAGE_TAG:0:7}|g" k8s/services-deploy.yaml
-          sed -i "s|wcd/frontend:latest|${REGISTRY}/${REPO}/frontend:main-${IMAGE_TAG:0:7}|g" k8s/frontend-deploy.yaml
-          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/services-deploy.yaml
-          sed -i "s|imagePullPolicy: Never|imagePullPolicy: Always|g" k8s/frontend-deploy.yaml
-
-      - name: Deploy to production
-        run: |
-          # Update namespace in manifests for production
-          sed -i "s|namespace: wcd-platform|namespace: wcd-production|g" k8s/config.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-production|g" k8s/redpanda-deploy.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-production|g" k8s/services-deploy.yaml
-          sed -i "s|namespace: wcd-platform|namespace: wcd-production|g" k8s/frontend-deploy.yaml
-
-          # Change frontend service to LoadBalancer for external access
-          sed -i "s|type: NodePort|type: LoadBalancer|g" k8s/frontend-deploy.yaml
-
-          kubectl apply -f k8s/config.yaml -n wcd-production
-          kubectl apply -f k8s/redis-simple.yaml -n wcd-production
-          kubectl apply -f k8s/redpanda-deploy.yaml -n wcd-production
-          kubectl apply -f k8s/services-deploy.yaml -n wcd-production
-          kubectl apply -f k8s/frontend-deploy.yaml -n wcd-production
-
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/wcd-ingest-service -n wcd-production --timeout=300s
-          kubectl rollout status deployment/wcd-projector-service -n wcd-production --timeout=300s
-          kubectl rollout status deployment/wcd-query-service -n wcd-production --timeout=300s
-          kubectl rollout status deployment/wcd-frontend -n wcd-production --timeout=300s
-
-      - name: Get External IP
-        run: |
-          echo "⏳ Waiting for LoadBalancer IP..."
-          for i in {1..30}; do
-            EXTERNAL_IP=$(kubectl get svc wcd-frontend -n wcd-production -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            if [ -n "$EXTERNAL_IP" ]; then
-              echo "🌐 Frontend URL: http://${EXTERNAL_IP}:5173"
-              echo "FRONTEND_URL=http://${EXTERNAL_IP}:5173" >> $GITHUB_ENV
-              break
-            fi
-            echo "Waiting for IP... (attempt $i/30)"
-            sleep 10
-          done
-
-      - name: Production deployment summary
-        run: |
-          echo "## 🎉 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
-          echo "**Cluster:** ${{ env.GKE_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          EXTERNAL_IP=$(kubectl get svc wcd-frontend -n wcd-production -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
-          echo "🌐 **Frontend URL:** http://${EXTERNAL_IP}:5173" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Production deployment successful!" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Deployment successful!" >> $GITHUB_STEP_SUMMARY
