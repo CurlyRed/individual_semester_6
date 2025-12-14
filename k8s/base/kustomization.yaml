@@ -15,6 +15,7 @@ resources:
   - deployments/ingest-service.yaml
   - deployments/projector-service.yaml
   - deployments/query-service.yaml
+  - deployments/frontend.yaml
 
   # StatefulSets
   - statefulsets/redis.yaml
@@ -30,14 +31,12 @@ resources:
 commonLabels:
   app.kubernetes.io/managed-by: kustomize
   app.kubernetes.io/part-of: wcd-system
-  environment: production
 
 # Common annotations
 commonAnnotations:
   deployment-version: "v3.0.0"
-  managed-by: "semester-3-team"
 
-# Images to override (useful for different environments)
+# Images - using consistent naming
 images:
   - name: ghcr.io/curlyred/individual_semester_6/ingest-service
     newTag: latest
@@ -48,23 +47,11 @@ images:
   - name: ghcr.io/curlyred/individual_semester_6/frontend
     newTag: latest
 
-# Resource limits for all containers
-# patches:
-#   - patch: |-
-#       - op: add
-#         path: /spec/template/spec/containers/0/resources/limits
-#         value:
-#           memory: 1Gi
-#           cpu: 1000m
-#     target:
-#       kind: Deployment
-#       labelSelector: app.kubernetes.io/part-of=wcd-system
-
 # Replicas configuration
 replicas:
   - name: wcd-ingest-service
-    count: 3
-  - name: wcd-projector-service
     count: 2
+  - name: wcd-projector-service
+    count: 1
   - name: wcd-query-service
-    count: 3
+    count: 2

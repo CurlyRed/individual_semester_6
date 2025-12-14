@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: messaging
 spec:
   serviceName: wcd-redpanda
-  replicas: 3  # 3 replicas for HA
+  replicas: 1  # Single replica for simple deployments
   podManagementPolicy: Parallel
   updateStrategy:
     type: RollingUpdate
@@ -38,22 +38,19 @@ spec:
         - redpanda
         - start
         - --smp=1
-        - --memory=2G
-        - --reserve-memory=256M
+        - --memory=1G
+        - --reserve-memory=200M
         - --overprovisioned
-        - --node-id=$(POD_ORDINAL)
-        - --kafka-addr=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
-        - --advertise-kafka-addr=INTERNAL://$(POD_NAME).wcd-redpanda.$(POD_NAMESPACE).svc.cluster.local:9092,EXTERNAL://$(POD_NAME).wcd-redpanda.$(POD_NAMESPACE).svc.cluster.local:19092
+        - --node-id=0
+        - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+        - --advertise-kafka-addr=PLAINTEXT://wcd-redpanda.wcd-platform.svc.cluster.local:9092
         - --pandaproxy-addr=0.0.0.0:8082
-        - --advertise-pandaproxy-addr=$(POD_NAME).wcd-redpanda.$(POD_NAMESPACE).svc.cluster.local:8082
+        - --advertise-pandaproxy-addr=wcd-redpanda.wcd-platform.svc.cluster.local:8082
         - --rpc-addr=0.0.0.0:33145
-        - --advertise-rpc-addr=$(POD_NAME).wcd-redpanda.$(POD_NAMESPACE).svc.cluster.local:33145
+        - --advertise-rpc-addr=wcd-redpanda.wcd-platform.svc.cluster.local:33145
         ports:
         - name: kafka
           containerPort: 9092
-          protocol: TCP
-        - name: kafka-external
-          containerPort: 19092
           protocol: TCP
         - name: pandaproxy
           containerPort: 8082
@@ -73,17 +70,13 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        - name: POD_ORDINAL
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
         resources:
           requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
             memory: "2Gi"
             cpu: "1000m"
-          limits:
-            memory: "4Gi"
-            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /v1/status/ready
@@ -110,8 +103,6 @@ spec:
         volumeMounts:
         - name: datadir
           mountPath: /var/lib/redpanda/data
-        - name: config
-          mountPath: /etc/redpanda
         securityContext:
           runAsUser: 101
           runAsGroup: 101
@@ -119,74 +110,6 @@ spec:
           capabilities:
             drop:
             - ALL
-      initContainers:
-      - name: redpanda-configurator
-        image: docker.redpanda.com/redpandadata/redpanda:v23.3.5
-        command:
-        - /bin/bash
-        - -c
-        - |
-          CONFIG_FILE=/etc/redpanda/redpanda.yaml
-          mkdir -p /etc/redpanda
-          cat > $CONFIG_FILE <<EOF
-          redpanda:
-            data_directory: /var/lib/redpanda/data
-            node_id: ${POD_ORDINAL}
-            rack: ${NODE_NAME}
-            seed_servers:
-              - host:
-                  address: wcd-redpanda-0.wcd-redpanda.${POD_NAMESPACE}.svc.cluster.local
-                  port: 33145
-              - host:
-                  address: wcd-redpanda-1.wcd-redpanda.${POD_NAMESPACE}.svc.cluster.local
-                  port: 33145
-              - host:
-                  address: wcd-redpanda-2.wcd-redpanda.${POD_NAMESPACE}.svc.cluster.local
-                  port: 33145
-          rpk:
-            tune_network: false
-            tune_disk_scheduler: false
-            tune_disk_nomerges: false
-            tune_disk_write_cache: false
-            tune_disk_irq: false
-            tune_cpu: false
-            tune_aio_events: false
-            tune_clocksource: false
-            tune_swappiness: false
-            tune_transparent_hugepages: false
-          EOF
-        env:
-        - name: POD_ORDINAL
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: NODE_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        volumeMounts:
-        - name: config
-          mountPath: /etc/redpanda
-        securityContext:
-          runAsUser: 101
-          runAsGroup: 101
-      volumes:
-      - name: config
-        emptyDir: {}
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: app
-                operator: In
-                values:
-                - redpanda
-            topologyKey: kubernetes.io/hostname
   volumeClaimTemplates:
   - metadata:
       name: datadir
@@ -194,10 +117,11 @@ spec:
         app: redpanda
     spec:
       accessModes: [ "ReadWriteOnce" ]
-      storageClassName: "fast-ssd"
+      # Use default storage class - works on GKE, AKS, EKS, and local clusters
+      # storageClassName: "standard" # Uncomment and change if needed
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
@@ -209,18 +133,12 @@ metadata:
     app.kubernetes.io/name: redpanda
 spec:
   type: ClusterIP
-  clusterIP: None  # Headless service for StatefulSet
-  publishNotReadyAddresses: true
   selector:
     app: redpanda
   ports:
   - name: kafka
     port: 9092
     targetPort: kafka
-    protocol: TCP
-  - name: kafka-external
-    port: 19092
-    targetPort: kafka-external
     protocol: TCP
   - name: pandaproxy
     port: 8082
@@ -234,42 +152,3 @@ spec:
     port: 33145
     targetPort: rpc
     protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: wcd-redpanda-external
-  namespace: wcd-platform
-  labels:
-    app: redpanda
-    app.kubernetes.io/name: redpanda-external
-spec:
-  type: LoadBalancer  # Or NodePort for local testing
-  selector:
-    app: redpanda
-  ports:
-  - name: kafka
-    port: 9092
-    targetPort: kafka
-    protocol: TCP
-  - name: pandaproxy
-    port: 8082
-    targetPort: pandaproxy
-    protocol: TCP
-  - name: admin
-    port: 9644
-    targetPort: admin
-    protocol: TCP
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: wcd-redpanda-pdb
-  namespace: wcd-platform
-  labels:
-    app: redpanda
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      app: redpanda

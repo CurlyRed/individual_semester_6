@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: backend
     app.kubernetes.io/version: "1.0.0"
 spec:
-  replicas: 2  # 2 replicas for HA (consumer service)
+  replicas: 1
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -43,9 +43,6 @@ spec:
         ports:
         - name: http
           containerPort: 8082
-          protocol: TCP
-        - name: metrics
-          containerPort: 9090
           protocol: TCP
         env:
         - name: SERVER_PORT
@@ -163,61 +160,3 @@ spec:
     port: 8082
     targetPort: http
     protocol: TCP
-  - name: metrics
-    port: 9090
-    targetPort: metrics
-    protocol: TCP
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: wcd-projector-service-hpa
-  namespace: wcd-platform
-  labels:
-    app: projector-service
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: wcd-projector-service
-  minReplicas: 2
-  maxReplicas: 6
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Pods
-        value: 1
-        periodSeconds: 60
-    scaleUp:
-      stabilizationWindowSeconds: 30
-      policies:
-      - type: Pods
-        value: 1
-        periodSeconds: 60
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: wcd-projector-service-pdb
-  namespace: wcd-platform
-  labels:
-    app: projector-service
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: projector-service

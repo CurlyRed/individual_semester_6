@@ -1,26 +1,23 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: wcd-redis-master
+  name: wcd-redis
   namespace: wcd-platform
   labels:
     app: redis
-    role: master
     app.kubernetes.io/name: redis
     app.kubernetes.io/part-of: wcd-system
     app.kubernetes.io/component: cache
 spec:
-  serviceName: wcd-redis-master
+  serviceName: wcd-redis
   replicas: 1
   selector:
     matchLabels:
       app: redis
-      role: master
   template:
     metadata:
       labels:
         app: redis
-        role: master
         app.kubernetes.io/name: redis
       annotations:
         prometheus.io/scrape: "true"
@@ -38,7 +35,7 @@ spec:
         - redis-server
         args:
         - --appendonly yes
-        - --maxmemory 2gb
+        - --maxmemory 1gb
         - --maxmemory-policy allkeys-lru
         - --save 900 1
         - --save 300 10
@@ -47,16 +44,13 @@ spec:
         - name: redis
           containerPort: 6379
           protocol: TCP
-        env:
-        - name: REDIS_REPLICATION_MODE
-          value: master
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "512Mi"
+            cpu: "250m"
           limits:
-            memory: "3Gi"
-            cpu: "2000m"
+            memory: "1Gi"
+            cpu: "1000m"
         livenessProbe:
           tcpSocket:
             port: redis
@@ -76,8 +70,6 @@ spec:
         volumeMounts:
         - name: redis-data
           mountPath: /data
-        - name: redis-config
-          mountPath: /usr/local/etc/redis
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -95,8 +87,8 @@ spec:
             memory: "32Mi"
             cpu: "10m"
           limits:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "64Mi"
+            cpu: "50m"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -105,11 +97,6 @@ spec:
           capabilities:
             drop:
             - ALL
-      volumes:
-      - name: redis-config
-        configMap:
-          name: redis-config
-          optional: true
   volumeClaimTemplates:
   - metadata:
       name: redis-data
@@ -117,25 +104,24 @@ spec:
         app: redis
     spec:
       accessModes: [ "ReadWriteOnce" ]
-      storageClassName: "fast-ssd"  # Use appropriate storage class
+      # Use default storage class - works on GKE, AKS, EKS, and local clusters
+      # storageClassName: "standard" # Uncomment and change if needed
       resources:
         requests:
-          storage: 10Gi
+          storage: 5Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: wcd-redis-master
+  name: wcd-redis
   namespace: wcd-platform
   labels:
     app: redis
-    role: master
     app.kubernetes.io/name: redis
 spec:
   type: ClusterIP
   selector:
     app: redis
-    role: master
   ports:
   - name: redis
     port: 6379
@@ -146,106 +132,19 @@ spec:
     targetPort: metrics
     protocol: TCP
 ---
-# Redis Replica StatefulSet (optional for HA)
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: wcd-redis-replica
-  namespace: wcd-platform
-  labels:
-    app: redis
-    role: replica
-    app.kubernetes.io/name: redis-replica
-    app.kubernetes.io/part-of: wcd-system
-spec:
-  serviceName: wcd-redis-replica
-  replicas: 2
-  selector:
-    matchLabels:
-      app: redis
-      role: replica
-  template:
-    metadata:
-      labels:
-        app: redis
-        role: replica
-        app.kubernetes.io/name: redis-replica
-    spec:
-      securityContext:
-        fsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-      containers:
-      - name: redis
-        image: redis:7-alpine
-        imagePullPolicy: IfNotPresent
-        command:
-        - redis-server
-        args:
-        - --replicaof wcd-redis-master 6379
-        - --appendonly yes
-        - --save ""
-        ports:
-        - name: redis
-          containerPort: 6379
-          protocol: TCP
-        env:
-        - name: REDIS_REPLICATION_MODE
-          value: replica
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        livenessProbe:
-          tcpSocket:
-            port: redis
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 10
-          periodSeconds: 5
-        volumeMounts:
-        - name: redis-data
-          mountPath: /data
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-  volumeClaimTemplates:
-  - metadata:
-      name: redis-data
-      labels:
-        app: redis
-        role: replica
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      storageClassName: "fast-ssd"
-      resources:
-        requests:
-          storage: 5Gi
----
+# Also create a service alias for compatibility with existing configs
 apiVersion: v1
 kind: Service
 metadata:
-  name: wcd-redis-replica
+  name: wcd-redis-master
   namespace: wcd-platform
   labels:
     app: redis
-    role: replica
+    app.kubernetes.io/name: redis
 spec:
   type: ClusterIP
-  clusterIP: None  # Headless service
   selector:
     app: redis
-    role: replica
   ports:
   - name: redis
     port: 6379
