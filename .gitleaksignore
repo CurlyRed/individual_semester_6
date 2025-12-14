@@ -1,12 +1,14 @@
 # GitLeaks ignore file
-# These are development/example values, not real secrets
+# Format: finding_fingerprint or path:rule:line patterns
+# These are development/placeholder values, not real secrets
+
+# Secrets template file with PLACEHOLDER values (not real secrets)
+k8s/base/secrets/app-secrets.yaml:kubernetes-secret-yaml:28
+k8s/base/secrets/app-secrets.yaml:generic-api-key:39
 
 # Dev API key example in PowerShell script
 k8s/FIX-AND-DEPLOY-REAL.ps1:curl-auth-header:321
 
-# Example basic auth for monitoring (admin/admin - not production)
+# Example basic auth for monitoring
 k8s/base/ingress/ingress.yaml:kubernetes-secret-yaml:225
 k8s/base/ingress/ingress.yaml:generic-api-key:233
-
-# Config files with example/dev keys
-k8s/base/secrets/app-secrets.yaml

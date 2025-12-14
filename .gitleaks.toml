@@ -1,0 +1,23 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+
+title = "WCD Platform Gitleaks Config"
+
+[extend]
+# Use default rules as base
+useDefault = true
+
+# Allowlist for development/placeholder secrets
+[allowlist]
+description = "Allowlist for placeholder and development secrets"
+
+paths = [
+    '''k8s/base/secrets/app-secrets\.yaml''',
+]
+
+regexes = [
+    '''changeme-.*''',
+    '''CHANGEME.*''',
+    '''placeholder.*''',
+    '''example.*''',
+]
