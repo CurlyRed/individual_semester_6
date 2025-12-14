@@ -4,12 +4,16 @@ kind: Kustomization
 namespace: wcd-platform
 
 resources:
-  # Namespace and RBAC
+  # Namespace
   - namespace/namespace.yaml
 
   # ConfigMaps and Secrets
   - configmaps/app-config.yaml
   - secrets/app-secrets.yaml
+
+  # StatefulSets (deploy first - dependencies)
+  - statefulsets/redis.yaml
+  - statefulsets/redpanda.yaml
 
   # Deployments
   - deployments/ingest-service.yaml
@@ -17,26 +21,10 @@ resources:
   - deployments/query-service.yaml
   - deployments/frontend.yaml
 
-  # StatefulSets
-  - statefulsets/redis.yaml
-  - statefulsets/redpanda.yaml
-
-  # Monitoring
+  # Monitoring (optional)
   - monitoring/jaeger.yaml
 
-  # Ingress
-  - ingress/ingress.yaml
-
-# Common labels applied to all resources
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
-  app.kubernetes.io/part-of: wcd-system
-
-# Common annotations
-commonAnnotations:
-  deployment-version: "v3.0.0"
-
-# Images - using consistent naming
+# Images
 images:
   - name: ghcr.io/curlyred/individual_semester_6/ingest-service
     newTag: latest
@@ -46,12 +34,3 @@ images:
     newTag: latest
   - name: ghcr.io/curlyred/individual_semester_6/frontend
     newTag: latest
-
-# Replicas configuration
-replicas:
-  - name: wcd-ingest-service
-    count: 2
-  - name: wcd-projector-service
-    count: 1
-  - name: wcd-query-service
-    count: 2

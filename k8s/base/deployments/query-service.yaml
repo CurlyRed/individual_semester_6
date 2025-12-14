@@ -7,16 +7,8 @@ metadata:
     app: query-service
     app.kubernetes.io/name: query-service
     app.kubernetes.io/part-of: wcd-system
-    app.kubernetes.io/component: backend
-    app.kubernetes.io/version: "1.0.0"
 spec:
-  replicas: 2
-  revisionHistoryLimit: 5
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+  replicas: 1
   selector:
     matchLabels:
       app: query-service
@@ -25,18 +17,11 @@ spec:
       labels:
         app: query-service
         app.kubernetes.io/name: query-service
-        app.kubernetes.io/expose: "true"
-        version: "1.0.0"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8083"
         prometheus.io/path: "/actuator/prometheus"
     spec:
-      serviceAccountName: wcd-query-service
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
       containers:
       - name: query-service
         image: ghcr.io/curlyred/individual_semester_6/query-service:latest
@@ -48,29 +33,14 @@ spec:
         env:
         - name: SERVER_PORT
           value: "8083"
-        - name: SPRING_APPLICATION_NAME
-          value: "query-service"
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
+        - name: SPRING_PROFILES_ACTIVE
+          value: "kubernetes"
         - name: CACHE_ENABLED
           value: "true"
         - name: CACHE_TTL_SECONDS
           value: "60"
         - name: JAVA_OPTS
-          valueFrom:
-            configMapKeyRef:
-              name: wcd-app-config
-              key: JAVA_OPTS
+          value: "-Xmx256m -Xms128m"
         envFrom:
         - configMapRef:
             name: wcd-app-config
@@ -78,77 +48,31 @@ spec:
             name: wcd-app-secrets
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "256Mi"
+            cpu: "100m"
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "512Mi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: http
-          initialDelaySeconds: 60
+          initialDelaySeconds: 90
           periodSeconds: 10
-          timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: http
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 5
-          timeoutSeconds: 3
           failureThreshold: 3
-        startupProbe:
-          httpGet:
-            path: /actuator/health
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          failureThreshold: 30
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        - name: app-logs
-          mountPath: /var/log/app
-        - name: cache
-          mountPath: /var/cache/app
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 1000
-          capabilities:
-            drop:
-            - ALL
       volumes:
       - name: tmp
         emptyDir: {}
-      - name: app-logs
-        emptyDir: {}
-      - name: cache
-        emptyDir:
-          sizeLimit: 512Mi
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - query-service
-              topologyKey: kubernetes.io/hostname
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: wcd-query-service
-  namespace: wcd-platform
-  labels:
-    app: query-service
 ---
 apiVersion: v1
 kind: Service
@@ -157,8 +81,6 @@ metadata:
   namespace: wcd-platform
   labels:
     app: query-service
-    app.kubernetes.io/name: query-service
-    app.kubernetes.io/part-of: wcd-system
 spec:
   type: ClusterIP
   selector:

@@ -1,3 +1,4 @@
+# Simple Jaeger all-in-one for development/small deployments
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,9 +6,6 @@ metadata:
   namespace: wcd-platform
   labels:
     app: jaeger
-    app.kubernetes.io/name: jaeger
-    app.kubernetes.io/part-of: wcd-system
-    app.kubernetes.io/component: tracing
 spec:
   replicas: 1
   selector:
@@ -17,11 +15,6 @@ spec:
     metadata:
       labels:
         app: jaeger
-        app.kubernetes.io/name: jaeger
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "14269"
-        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: jaeger
@@ -31,55 +24,28 @@ spec:
         - name: COLLECTOR_OTLP_ENABLED
           value: "true"
         - name: SPAN_STORAGE_TYPE
-          value: "memory"  # Use "elasticsearch" or "cassandra" for production
+          value: "memory"
         - name: MEMORY_MAX_TRACES
-          value: "10000"
-        - name: QUERY_BASE_PATH
-          value: "/"
-        - name: METRICS_STORAGE_TYPE
-          value: "prometheus"
-        - name: PROMETHEUS_SERVER_URL
-          value: "http://wcd-prometheus:9090"
+          value: "5000"
         ports:
-        # Collector ports
         - name: otlp-grpc
           containerPort: 4317
-          protocol: TCP
-        - name: otlp-http
-          containerPort: 4318
-          protocol: TCP
-        - name: jaeger-grpc
-          containerPort: 14250
-          protocol: TCP
-        - name: jaeger-thrift
-          containerPort: 14268
-          protocol: TCP
-        - name: zipkin
-          containerPort: 9411
-          protocol: TCP
-        # Query ports
         - name: query-http
           containerPort: 16686
-          protocol: TCP
-        - name: query-grpc
-          containerPort: 16685
-          protocol: TCP
-        # Admin ports
         - name: admin-http
           containerPort: 14269
-          protocol: TCP
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "128Mi"
+            cpu: "50m"
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "256Mi"
+            cpu: "200m"
         livenessProbe:
           httpGet:
             path: /
             port: admin-http
-          initialDelaySeconds: 30
+          initialDelaySeconds: 20
           periodSeconds: 10
         readinessProbe:
           httpGet:
@@ -87,12 +53,6 @@ spec:
             port: admin-http
           initialDelaySeconds: 10
           periodSeconds: 5
-        volumeMounts:
-        - name: jaeger-data
-          mountPath: /tmp
-      volumes:
-      - name: jaeger-data
-        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -101,8 +61,6 @@ metadata:
   namespace: wcd-platform
   labels:
     app: jaeger
-    app.kubernetes.io/name: jaeger-collector
-    app.kubernetes.io/component: tracing
 spec:
   type: ClusterIP
   selector:
@@ -111,23 +69,6 @@ spec:
   - name: otlp-grpc
     port: 4317
     targetPort: otlp-grpc
-    protocol: TCP
-  - name: otlp-http
-    port: 4318
-    targetPort: otlp-http
-    protocol: TCP
-  - name: jaeger-grpc
-    port: 14250
-    targetPort: jaeger-grpc
-    protocol: TCP
-  - name: jaeger-thrift
-    port: 14268
-    targetPort: jaeger-thrift
-    protocol: TCP
-  - name: zipkin
-    port: 9411
-    targetPort: zipkin
-    protocol: TCP
 ---
 apiVersion: v1
 kind: Service
@@ -136,8 +77,6 @@ metadata:
   namespace: wcd-platform
   labels:
     app: jaeger
-    app.kubernetes.io/name: jaeger-query
-    app.kubernetes.io/component: tracing
 spec:
   type: ClusterIP
   selector:
@@ -146,215 +85,3 @@ spec:
   - name: query-http
     port: 16686
     targetPort: query-http
-    protocol: TCP
-  - name: query-grpc
-    port: 16685
-    targetPort: query-grpc
-    protocol: TCP
-  - name: admin-http
-    port: 14269
-    targetPort: admin-http
-    protocol: TCP
----
-# Production Jaeger with Elasticsearch backend
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: wcd-jaeger-collector-prod
-  namespace: wcd-platform
-  labels:
-    app: jaeger-collector
-    app.kubernetes.io/name: jaeger-collector
-    app.kubernetes.io/part-of: wcd-system
-    app.kubernetes.io/component: tracing
-spec:
-  replicas: 2  # Multiple collectors for HA
-  selector:
-    matchLabels:
-      app: jaeger-collector
-  template:
-    metadata:
-      labels:
-        app: jaeger-collector
-        app.kubernetes.io/name: jaeger-collector
-    spec:
-      containers:
-      - name: jaeger-collector
-        image: jaegertracing/jaeger-collector:1.52
-        imagePullPolicy: IfNotPresent
-        env:
-        - name: SPAN_STORAGE_TYPE
-          value: "elasticsearch"
-        - name: ES_SERVER_URLS
-          value: "http://wcd-elasticsearch:9200"
-        - name: ES_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: elasticsearch-credentials
-              key: username
-              optional: true
-        - name: ES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: elasticsearch-credentials
-              key: password
-              optional: true
-        - name: COLLECTOR_OTLP_ENABLED
-          value: "true"
-        - name: COLLECTOR_NUM_WORKERS
-          value: "50"
-        - name: COLLECTOR_QUEUE_SIZE
-          value: "2000"
-        ports:
-        - name: otlp-grpc
-          containerPort: 4317
-          protocol: TCP
-        - name: otlp-http
-          containerPort: 4318
-          protocol: TCP
-        - name: jaeger-grpc
-          containerPort: 14250
-          protocol: TCP
-        - name: jaeger-thrift
-          containerPort: 14268
-          protocol: TCP
-        - name: admin-http
-          containerPort: 14269
-          protocol: TCP
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: admin-http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: admin-http
-          initialDelaySeconds: 10
-          periodSeconds: 5
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: wcd-jaeger-query-prod
-  namespace: wcd-platform
-  labels:
-    app: jaeger-query-prod
-    app.kubernetes.io/name: jaeger-query
-    app.kubernetes.io/part-of: wcd-system
-    app.kubernetes.io/component: tracing
-spec:
-  replicas: 2  # Multiple query instances for HA
-  selector:
-    matchLabels:
-      app: jaeger-query-prod
-  template:
-    metadata:
-      labels:
-        app: jaeger-query-prod
-        app.kubernetes.io/name: jaeger-query
-    spec:
-      containers:
-      - name: jaeger-query
-        image: jaegertracing/jaeger-query:1.52
-        imagePullPolicy: IfNotPresent
-        env:
-        - name: SPAN_STORAGE_TYPE
-          value: "elasticsearch"
-        - name: ES_SERVER_URLS
-          value: "http://wcd-elasticsearch:9200"
-        - name: ES_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: elasticsearch-credentials
-              key: username
-              optional: true
-        - name: ES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: elasticsearch-credentials
-              key: password
-              optional: true
-        - name: QUERY_BASE_PATH
-          value: "/"
-        - name: QUERY_MAX_CLOCK_SKEW_ADJUSTMENT
-          value: "30s"
-        ports:
-        - name: query-http
-          containerPort: 16686
-          protocol: TCP
-        - name: query-grpc
-          containerPort: 16685
-          protocol: TCP
-        - name: admin-http
-          containerPort: 14269
-          protocol: TCP
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "250m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: admin-http
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: admin-http
-          initialDelaySeconds: 10
-          periodSeconds: 5
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: wcd-jaeger-es-index-cleaner
-  namespace: wcd-platform
-  labels:
-    app: jaeger-es-index-cleaner
-    app.kubernetes.io/name: jaeger-es-index-cleaner
-    app.kubernetes.io/part-of: wcd-system
-spec:
-  schedule: "0 0 * * *"  # Daily at midnight
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 1
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: jaeger-es-index-cleaner
-            image: jaegertracing/jaeger-es-index-cleaner:1.52
-            imagePullPolicy: IfNotPresent
-            env:
-            - name: ES_SERVER_URLS
-              value: "http://wcd-elasticsearch:9200"
-            - name: ES_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: elasticsearch-credentials
-                  key: username
-                  optional: true
-            - name: ES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: elasticsearch-credentials
-                  key: password
-                  optional: true
-            - name: ROLLOVER
-              value: "true"
-            args:
-            - "14"  # Number of days to retain
-          restartPolicy: OnFailure
