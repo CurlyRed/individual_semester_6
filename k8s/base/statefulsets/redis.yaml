@@ -21,17 +21,17 @@ spec:
         image: redis:7-alpine
         imagePullPolicy: IfNotPresent
         command: ["redis-server"]
-        args: ["--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+        args: ["--appendonly", "yes", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
         ports:
         - name: redis
           containerPort: 6379
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "50m"
+            memory: "64Mi"
+            cpu: "10m"
           limits:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "128Mi"
+            cpu: "100m"
         livenessProbe:
           tcpSocket:
             port: redis
@@ -59,8 +59,6 @@ kind: Service
 metadata:
   name: wcd-redis
   namespace: wcd-platform
-  labels:
-    app: redis
 spec:
   type: ClusterIP
   selector:
@@ -75,8 +73,6 @@ kind: Service
 metadata:
   name: wcd-redis-master
   namespace: wcd-platform
-  labels:
-    app: redis
 spec:
   type: ClusterIP
   selector:

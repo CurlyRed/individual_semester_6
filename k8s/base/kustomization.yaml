@@ -21,8 +21,8 @@ resources:
   - deployments/query-service.yaml
   - deployments/frontend.yaml
 
-  # Monitoring (optional)
-  - monitoring/jaeger.yaml
+  # Monitoring disabled to save resources
+  # - monitoring/jaeger.yaml
 
 # Images
 images:

@@ -24,14 +24,12 @@ spec:
         - redpanda
         - start
         - --smp=1
-        - --memory=512M
-        - --reserve-memory=100M
+        - --memory=256M
+        - --reserve-memory=50M
         - --overprovisioned
         - --node-id=0
         - --kafka-addr=PLAINTEXT://0.0.0.0:9092
         - --advertise-kafka-addr=PLAINTEXT://wcd-redpanda:9092
-        - --pandaproxy-addr=0.0.0.0:8082
-        - --advertise-pandaproxy-addr=wcd-redpanda:8082
         ports:
         - name: kafka
           containerPort: 9092
@@ -39,11 +37,11 @@ spec:
           containerPort: 9644
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "200m"
+            memory: "256Mi"
+            cpu: "25m"
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "512Mi"
+            cpu: "300m"
         livenessProbe:
           httpGet:
             path: /v1/status/ready
@@ -73,8 +71,6 @@ kind: Service
 metadata:
   name: wcd-redpanda
   namespace: wcd-platform
-  labels:
-    app: redpanda
 spec:
   type: ClusterIP
   selector:

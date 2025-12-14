@@ -5,8 +5,6 @@ metadata:
   namespace: wcd-platform
   labels:
     app: query-service
-    app.kubernetes.io/name: query-service
-    app.kubernetes.io/part-of: wcd-system
 spec:
   replicas: 1
   selector:
@@ -16,11 +14,6 @@ spec:
     metadata:
       labels:
         app: query-service
-        app.kubernetes.io/name: query-service
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8083"
-        prometheus.io/path: "/actuator/prometheus"
     spec:
       containers:
       - name: query-service
@@ -29,18 +22,13 @@ spec:
         ports:
         - name: http
           containerPort: 8083
-          protocol: TCP
         env:
         - name: SERVER_PORT
           value: "8083"
         - name: SPRING_PROFILES_ACTIVE
           value: "kubernetes"
-        - name: CACHE_ENABLED
-          value: "true"
-        - name: CACHE_TTL_SECONDS
-          value: "60"
         - name: JAVA_OPTS
-          value: "-Xmx256m -Xms128m"
+          value: "-Xmx128m -Xms64m"
         envFrom:
         - configMapRef:
             name: wcd-app-config
@@ -48,25 +36,25 @@ spec:
             name: wcd-app-secrets
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: "192Mi"
+            cpu: "10m"
           limits:
-            memory: "512Mi"
+            memory: "384Mi"
             cpu: "500m"
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: http
-          initialDelaySeconds: 90
+          initialDelaySeconds: 120
           periodSeconds: 10
-          failureThreshold: 3
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: http
-          initialDelaySeconds: 60
-          periodSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          failureThreshold: 5
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -89,4 +77,3 @@ spec:
   - name: http
     port: 8083
     targetPort: http
-    protocol: TCP
