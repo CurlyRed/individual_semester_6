@@ -21,6 +21,9 @@ resources:
   - deployments/query-service.yaml
   - deployments/frontend.yaml
 
+  # Ingress
+  - ingress/ingress.yaml
+
   # Monitoring disabled to save resources
   # - monitoring/jaeger.yaml
 
