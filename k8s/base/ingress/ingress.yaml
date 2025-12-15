@@ -19,11 +19,11 @@ metadata:
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
     nginx.ingress.kubernetes.io/limit-connections: "100"
 
-    # CORS configuration - restrict to your domain in production
+    # CORS configuration - allow all origins for IP-based access
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-KEY"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://wcd-platform.com"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
 
     # Security headers
     nginx.ingress.kubernetes.io/configuration-snippet: |
@@ -35,10 +35,10 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  # Main domain - frontend
-  - host: wcd-platform.com
-    http:
+  # IP-based access - no host restriction for direct IP access
+  - http:
       paths:
+      # Frontend - catch-all for root
       - path: /
         pathType: Prefix
         backend:
@@ -46,11 +46,6 @@ spec:
             name: wcd-frontend
             port:
               number: 80
-
-  # API subdomain - only services that actually exist
-  - host: api.wcd-platform.com
-    http:
-      paths:
       # Ingest Service - event ingestion
       - path: /api/events
         pathType: Prefix
@@ -59,7 +54,6 @@ spec:
             name: wcd-ingest-service
             port:
               number: 8081
-
       # Query Service - all query endpoints
       - path: /api/query
         pathType: Prefix
@@ -82,7 +76,6 @@ spec:
             name: wcd-query-service
             port:
               number: 8083
-
       # Health check endpoint
       - path: /health
         pathType: Exact

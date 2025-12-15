@@ -43,7 +43,9 @@
       "Bash(cmd /c:*)",
       "Bash(kubectl delete:*)",
       "Bash(kubectl exec:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(kubectl config:*)",
+      "Bash(kubectl wait:*)"
     ],
     "deny": [],
     "ask": []
