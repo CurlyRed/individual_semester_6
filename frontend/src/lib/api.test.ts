@@ -74,7 +74,7 @@ describe('api', () => {
     })
 
     it('includes amount in request', async () => {
-      let capturedBody: GameAction | null = null
+      let capturedBody: GameAction | undefined
 
       server.use(
         http.post('http://localhost:8081/api/events/drink', async ({ request }) => {
@@ -92,7 +92,8 @@ describe('api', () => {
 
       await api.sendDrink(data)
 
-      expect(capturedBody?.amount).toBe(5)
+      expect(capturedBody).toBeDefined()
+      expect(capturedBody!.amount).toBe(5)
     })
   })
 
