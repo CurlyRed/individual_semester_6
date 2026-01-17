@@ -8,6 +8,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -88,16 +89,14 @@ class PresenceControllerIntegrationTest {
     }
 
     @Test
-    void onlineCount_ServiceError_PropagatesException() throws Exception {
+    void onlineCount_ServiceError_PropagatesException() {
         when(presenceService.getOnlineCount())
             .thenThrow(new RuntimeException("Redis connection failed"));
 
-        // When service throws exception, Spring will handle it
-        mockMvc.perform(get("/api/presence/onlineCount"))
-            .andExpect(result -> {
-                int status = result.getResponse().getStatus();
-                assert status >= 400 : "Expected error status code";
-            });
+        // When service throws exception without global handler, it propagates as ServletException
+        assertThrows(Exception.class, () ->
+            mockMvc.perform(get("/api/presence/onlineCount"))
+        );
     }
 
     @Test

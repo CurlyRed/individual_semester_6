@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -116,17 +117,14 @@ class LeaderboardControllerIntegrationTest {
     }
 
     @Test
-    void getLeaderboard_ServiceError_PropagatesException() throws Exception {
+    void getLeaderboard_ServiceError_PropagatesException() {
         when(leaderboardService.getTopPlayers(anyString(), anyInt()))
             .thenThrow(new RuntimeException("Database error"));
 
-        // When service throws exception, Spring will handle it (typically returns 500)
-        mockMvc.perform(get("/api/leaderboard"))
-            .andExpect(result -> {
-                // Just verify the request was processed - exception handling is Spring's responsibility
-                int status = result.getResponse().getStatus();
-                assert status >= 400 : "Expected error status code";
-            });
+        // When service throws exception without global handler, it propagates as ServletException
+        assertThrows(Exception.class, () ->
+            mockMvc.perform(get("/api/leaderboard"))
+        );
     }
 
     @Test
