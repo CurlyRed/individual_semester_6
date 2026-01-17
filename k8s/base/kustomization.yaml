@@ -12,9 +12,8 @@ resources:
 
   # External Secrets (production secret management)
   # Requires External Secrets Operator to be installed
-  # See: external-secrets/README.md
-  - external-secrets/secret-store.yaml
-  - external-secrets/external-secret-app.yaml
+  # - external-secrets/secret-store.yaml
+  # - external-secrets/external-secret-app.yaml
 
   # Development secrets (for local development only)
   # Comment out in production when using External Secrets

@@ -65,6 +65,13 @@ k6/spike-results.json
 # Claude Code temp files
 tmpclaude-*
 **/tmpclaude-*
+tmpclaude*/
 
 # Coverage reports (generated)
 frontend/coverage/
+
+# Evidence folder (local only)
+evidence/
+
+# Scripts folder (local only)
+scripts/
