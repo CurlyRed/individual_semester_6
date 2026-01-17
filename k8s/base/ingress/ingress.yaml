@@ -1,37 +1,41 @@
+# Combined Ingress for all WCD services
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: wcd-platform-ingress
+  name: wcd-ingress
   namespace: wcd-platform
   labels:
     app.kubernetes.io/name: wcd-ingress
     app.kubernetes.io/part-of: wcd-system
   annotations:
-    # Nginx Ingress Controller annotations
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
-
-    # Rate limiting
-    nginx.ingress.kubernetes.io/limit-rps: "100"
-    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
-    nginx.ingress.kubernetes.io/limit-connections: "100"
-
-    # CORS configuration - allow all origins for IP-based access
+    nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-KEY"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-KEY"
 spec:
   ingressClassName: nginx
   rules:
-  # IP-based access - no host restriction for direct IP access
   - http:
       paths:
-      # Frontend - catch-all for root
+      # Ingest service - /ingest/api/* -> /api/*
+      - path: /ingest(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: wcd-ingest-service
+            port:
+              number: 8081
+      # Query service - /query/api/* -> /api/*
+      - path: /query(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: wcd-query-service
+            port:
+              number: 8083
+      # Frontend - catch-all for everything else
       - path: /
         pathType: Prefix
         backend:
@@ -39,41 +43,3 @@ spec:
             name: wcd-frontend
             port:
               number: 80
-      # Ingest Service - event ingestion
-      - path: /api/events
-        pathType: Prefix
-        backend:
-          service:
-            name: wcd-ingest-service
-            port:
-              number: 8081
-      # Query Service - all query endpoints
-      - path: /api/query
-        pathType: Prefix
-        backend:
-          service:
-            name: wcd-query-service
-            port:
-              number: 8083
-      - path: /api/leaderboard
-        pathType: Prefix
-        backend:
-          service:
-            name: wcd-query-service
-            port:
-              number: 8083
-      - path: /api/presence
-        pathType: Prefix
-        backend:
-          service:
-            name: wcd-query-service
-            port:
-              number: 8083
-      # Health check endpoint
-      - path: /health
-        pathType: Exact
-        backend:
-          service:
-            name: wcd-query-service
-            port:
-              number: 8083
