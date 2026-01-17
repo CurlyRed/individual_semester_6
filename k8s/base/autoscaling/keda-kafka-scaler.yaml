@@ -1,0 +1,34 @@
+# KEDA Kafka Scaler for projector-service
+# Scales based on Kafka consumer lag - perfect for event-driven architectures
+# This demonstrates scale-to-zero when no messages are pending
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-projector-kafka
+  namespace: wcd-platform
+  labels:
+    app: projector-service
+    scaler: kafka
+spec:
+  scaleTargetRef:
+    name: wcd-projector-service
+    kind: Deployment
+  pollingInterval: 10
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 3
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: redpanda.wcd-platform.svc.cluster.local:9092
+      consumerGroup: projector-group
+      topic: wcd-events
+      lagThreshold: "100"
+      activationLagThreshold: "10"
+      offsetResetPolicy: earliest
+      allowIdleConsumers: "true"
+      scaleToZeroOnInvalidOffset: "true"

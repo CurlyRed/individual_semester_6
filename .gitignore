@@ -62,4 +62,9 @@ k6/*.json
 k6/baseline-results.json
 k6/spike-results.json
 
+# Claude Code temp files
+tmpclaude-*
+**/tmpclaude-*
 
+# Coverage reports (generated)
+frontend/coverage/

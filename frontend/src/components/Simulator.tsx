@@ -34,8 +34,9 @@ export default function Simulator() {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
+          <label htmlFor="user-id" className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
           <input
+            id="user-id"
             type="text"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
@@ -45,8 +46,9 @@ export default function Simulator() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+            <label htmlFor="region" className="block text-sm font-medium text-gray-700 mb-1">Region</label>
             <select
+              id="region"
               value={region}
               onChange={(e) => setRegion(e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2"
@@ -58,8 +60,9 @@ export default function Simulator() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Match ID</label>
+            <label htmlFor="match-id" className="block text-sm font-medium text-gray-700 mb-1">Match ID</label>
             <select
+              id="match-id"
               value={matchId}
               onChange={(e) => setMatchId(e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2"
@@ -72,8 +75,9 @@ export default function Simulator() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Drink Amount</label>
+          <label htmlFor="drink-amount" className="block text-sm font-medium text-gray-700 mb-1">Drink Amount</label>
           <input
+            id="drink-amount"
             type="number"
             value={amount}
             onChange={(e) => setAmount(parseInt(e.target.value))}

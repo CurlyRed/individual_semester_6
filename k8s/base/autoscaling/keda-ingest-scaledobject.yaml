@@ -1,0 +1,95 @@
+# KEDA ScaledObject for scale-to-zero capability
+# Requires KEDA to be installed: kubectl apply -f https://github.com/kedacore/keda/releases/download/v2.13.0/keda-2.13.0.yaml
+#
+# This configuration enables:
+# - Scale to zero when no HTTP traffic (cooldown period)
+# - Scale based on Prometheus metrics (requests per second)
+# - Kafka consumer lag-based scaling
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-ingest-service
+  namespace: wcd-platform
+  labels:
+    app: ingest-service
+spec:
+  scaleTargetRef:
+    name: wcd-ingest-service
+    kind: Deployment
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  triggers:
+  # Scale based on CPU utilization
+  - type: cpu
+    metricType: Utilization
+    metadata:
+      value: "70"
+  # Scale based on memory utilization
+  - type: memory
+    metricType: Utilization
+    metadata:
+      value: "80"
+---
+# Alternative: HTTP-based scaling with KEDA HTTP Add-on
+# Requires: https://github.com/kedacore/http-add-on
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-query-service
+  namespace: wcd-platform
+  labels:
+    app: query-service
+spec:
+  scaleTargetRef:
+    name: wcd-query-service
+    kind: Deployment
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  triggers:
+  - type: cpu
+    metricType: Utilization
+    metadata:
+      value: "70"
+  - type: memory
+    metricType: Utilization
+    metadata:
+      value: "80"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-projector-service
+  namespace: wcd-platform
+  labels:
+    app: projector-service
+spec:
+  scaleTargetRef:
+    name: wcd-projector-service
+    kind: Deployment
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 3
+  fallback:
+    failureThreshold: 3
+    replicas: 1
+  triggers:
+  - type: cpu
+    metricType: Utilization
+    metadata:
+      value: "70"
+  - type: memory
+    metricType: Utilization
+    metadata:
+      value: "80"

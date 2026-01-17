@@ -7,8 +7,17 @@ resources:
   # Namespace
   - namespace/namespace.yaml
 
-  # ConfigMaps and Secrets
+  # ConfigMaps
   - configmaps/app-config.yaml
+
+  # External Secrets (production secret management)
+  # Requires External Secrets Operator to be installed
+  # See: external-secrets/README.md
+  - external-secrets/secret-store.yaml
+  - external-secrets/external-secret-app.yaml
+
+  # Development secrets (for local development only)
+  # Comment out in production when using External Secrets
   - secrets/app-secrets.yaml
 
   # StatefulSets (deploy first - dependencies)
@@ -23,6 +32,17 @@ resources:
 
   # Ingress
   - ingress/ingress.yaml
+
+  # Autoscaling - HorizontalPodAutoscaler
+  - autoscaling/hpa-ingest.yaml
+  - autoscaling/hpa-query.yaml
+  - autoscaling/hpa-projector.yaml
+  - autoscaling/hpa-frontend.yaml
+
+  # KEDA Scale-to-Zero (requires KEDA operator)
+  # Uncomment when KEDA is installed
+  # - autoscaling/keda-ingest-scaledobject.yaml
+  # - autoscaling/keda-kafka-scaler.yaml
 
   # Monitoring disabled to save resources
   # - monitoring/jaeger.yaml
